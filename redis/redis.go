@@ -1,95 +1,11 @@
 package redis
 
 import (
-	"bytes"
 	"fmt"
-	"io"
 	"net"
 	"strconv"
 	"strings"
 )
-
-// Command command
-type Command struct {
-	cmd  []string
-	data interface{}
-}
-
-// NewCommand new
-func NewCommand(cmd []string) *Command {
-	return &Command{
-		cmd: cmd,
-	}
-}
-
-// Result result
-type Result struct {
-	data interface{}
-}
-
-// NewResult new
-func NewResult(data interface{}) *Result {
-	return &Result{
-		data: data,
-	}
-}
-
-func isText(d []byte) bool {
-	if bytes.Index(d, []byte{0}) != -1 {
-		return false
-	}
-	return true
-}
-
-func (r Result) String(writer io.Writer) error {
-	switch r.data.(type) {
-	case []byte:
-		d, ok := r.data.([]byte)
-		if !ok {
-			return fmt.Errorf("convert to []byte")
-		}
-		if isText(d) {
-			fmt.Fprintf(writer, "%s\n", string(d))
-		} else {
-			for _, b := range d {
-				//s := strconv.FormatInt(int64(b&0xff), 16)
-				fmt.Fprintf(writer, "\\x%02x", b)
-			}
-			fmt.Fprintf(writer, "\n")
-		}
-		return nil
-	case []interface{}:
-		d, ok := r.data.([]interface{})
-		if !ok {
-			return fmt.Errorf("convert to []interface{}")
-		}
-		if len(d) == 0 {
-			fmt.Fprintf(writer, "(empty list or set)\r\n")
-			return nil
-		}
-		for i, ele := range d {
-			fmt.Fprintf(writer, "%v", i+1)
-			//writer.WriteString(strconv.Itoa(i + 1))
-			fmt.Fprintf(writer, ") \"")
-			b := ele.([]byte)
-			fmt.Fprintf(writer, "%v", string(b))
-			fmt.Fprintf(writer, "\"")
-			fmt.Fprintf(writer, "\r\n")
-		}
-		return nil
-	default:
-		return fmt.Errorf("convert %s to string", r.data)
-	}
-}
-
-// IsString is string same
-func (r Result) IsString(s string) bool {
-	b, ok := r.data.([]byte)
-	if !ok {
-		return false
-	}
-	return string(b) == s
-}
 
 // Client client
 type Client struct {

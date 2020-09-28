@@ -8,42 +8,6 @@ import (
 	"strconv"
 )
 
-var (
-	arrayPrefixSlice      = []byte{'*'}
-	bulkStringPrefixSlice = []byte{'$'}
-	lineEndingSlice       = []byte{'\r', '\n'}
-)
-
-// RESPWriter w
-type RESPWriter struct {
-	*bufio.Writer
-}
-
-// NewRESPWriter new
-func NewRESPWriter(writer io.Writer) *RESPWriter {
-	return &RESPWriter{
-		Writer: bufio.NewWriter(writer),
-	}
-}
-
-// WriteCommand write
-// @param args - All Redis commands are sent as arrays of bulk strings. *3\r\n$3\r\nSET\r\n$5\r\nmykey\r\n$8\r\nmy value\r\n
-func (w *RESPWriter) WriteCommand(args ...string) (err error) {
-	w.Write(arrayPrefixSlice)
-	w.WriteString(strconv.Itoa(len(args)))
-	w.Write(lineEndingSlice)
-
-	for _, arg := range args {
-		w.Write(bulkStringPrefixSlice)
-		w.WriteString(strconv.Itoa(len(arg)))
-		w.Write(lineEndingSlice)
-		w.WriteString(arg)
-		w.Write(lineEndingSlice)
-	}
-
-	return w.Flush()
-}
-
 // const
 const (
 	SIMPLE_STRING = '+'
@@ -55,6 +19,33 @@ const (
 
 // ErrInvalidSyntax err
 var ErrInvalidSyntax = errors.New("resp: invalid syntax")
+
+// Type is the message type.
+type Type int
+
+// type
+const (
+	SimpleStr Type = iota
+	Err
+	Int
+	BulkStr
+	Array
+	Nil
+)
+
+// Object is the reply.
+type Object struct {
+	Type
+	val interface{}
+}
+
+// NewObject new
+func NewObject(t Type, val interface{}) *Object {
+	return &Object{
+		Type: t,
+		val:  val,
+	}
+}
 
 // RESPReader reader
 type RESPReader struct {
@@ -69,19 +60,22 @@ func NewReader(reader io.Reader) *RESPReader {
 }
 
 // ReadObject read
-func (r *RESPReader) ReadObject() (interface{}, error) {
+func (r *RESPReader) ReadObject() (*Object, error) {
 	line, err := r.readLine()
 	if err != nil {
 		return nil, err
 	}
 
 	switch line[0] {
-	case SIMPLE_STRING, INTEGER: // +OK\r\n  :99\r\n  -ERR unknown command 'GETT'\r\n
-		return line[1:], nil
+	case SIMPLE_STRING: // +OK\r\n
+		return NewObject(SimpleStr, line[1:]), nil
 	case ERROR:
-		return nil, fmt.Errorf("(error) %s", line[1:])
+		return NewObject(Err, line[1:]), fmt.Errorf("(error) %s", line[1:])
+	case INTEGER: // :99\r\n  -ERR unknown command 'GETT'\r\n
+		return NewObject(Int, line[1:]), nil
 	case BULK_STRING: // $13\r\nHello, World!\r\n
-		return r.readBulkString(line)
+		b, err := r.readBulkString(line)
+		return NewObject(BulkStr, b), err
 	case ARRAY: // *3\r\n$3\r\nSET\r\n$5\r\nmykey\r\n$8\r\nmy value\r\n
 		return r.readArray(line)
 	default:
@@ -113,12 +107,12 @@ func (r *RESPReader) getCount(line []byte) (int, error) {
 	return strconv.Atoi(string(line[1:]))
 }
 
-func (r *RESPReader) readArray(line []byte) (interface{}, error) {
+func (r *RESPReader) readArray(line []byte) (*Object, error) {
 	count, err := r.getCount(line)
 	if err != nil {
 		return nil, err
 	}
-	var elems []interface{}
+	var elems = make([]*Object, 0, count)
 	for i := 0; i < count; i++ {
 		buf, err := r.ReadObject()
 		if err != nil {
@@ -126,7 +120,7 @@ func (r *RESPReader) readArray(line []byte) (interface{}, error) {
 		}
 		elems = append(elems, buf)
 	}
-	return elems, nil
+	return NewObject(Array, elems), nil
 }
 
 func (r *RESPReader) readLine() (line []byte, err error) {
