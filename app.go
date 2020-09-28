@@ -119,12 +119,11 @@ func (t *DBTree) OnChanged(node *tview.TreeNode) {
 
 var (
 	previewText *tview.TextView
-	outputText  *tview.TextView
 )
 
 // Run run
 func Run() {
-	client := NewRedis("127.0.0.1:6379")
+	client := NewRedis("127.0.0.1:9898")
 	defer client.Close()
 
 	pages := tview.NewPages()
@@ -148,7 +147,8 @@ func Run() {
 		SetBorder(true).
 		SetBorderColor(tcell.ColorSteelBlue)
 
-	outputText = tview.NewTextView()
+	outputText := tview.NewTextView()
+	SetLogger(outputText)
 	outputText.SetScrollable(true).SetTitle("CONSOLE").SetBorder(true)
 
 	previewFlexBox.AddItem(previewText, 0, 3, false)
