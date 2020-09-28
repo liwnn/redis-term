@@ -63,17 +63,21 @@ func (r *Redis) Keys(pattern string) []string {
 type DBTree struct {
 	root *tview.TreeNode
 	tree *tview.TreeView
+
+	redis *Redis
 }
 
 // NewDBTree new
-func NewDBTree(rootName string) *DBTree {
+func NewDBTree(rootName string, redis *Redis) *DBTree {
 	root := tview.NewTreeNode(rootName).SetColor(tcell.ColorRed)
 	root.SetReference("db")
 	tree := tview.NewTreeView().SetRoot(root).SetCurrentNode(root)
 	dbTree := &DBTree{
-		root: root,
-		tree: tree,
+		root:  root,
+		tree:  tree,
+		redis: redis,
 	}
+	//tree.SetGraphics(false)
 	tree.SetSelectedFunc(dbTree.OnSelected)
 	return dbTree
 }
@@ -84,6 +88,7 @@ func (t *DBTree) AddNode(target *tview.TreeNode, name string, reference interfac
 	if reference != nil {
 		node.SetReference(reference)
 	}
+	//node.SetIndent(0)
 	node.SetColor(tcell.ColorGreen)
 	target.AddChild(node)
 }
@@ -102,40 +107,7 @@ func (t *DBTree) OnSelected(node *tview.TreeNode) {
 		}
 		switch typ {
 		case "db":
-		}
-		nodes, reference := f()
-		for _, k := range nodes {
-			t.AddNode(node, k, reference)
-		}
-	} else {
-		node.SetExpanded(!node.IsExpanded())
-	}
-}
-
-func main() {
-	client := NewRedis("127.0.0.1:9898")
-	defer client.Close()
-
-	keys := func() ([]string, func() []string) {
-		return client.Keys("*"), nil
-	}
-
-	initDB := func() ([]string, func() ([]string, func() []string)) {
-		dbNum, err := client.GetDatabases()
-		if err != nil {
-			log.Fatalln(err)
-		}
-		r := make([]string, 0, dbNum)
-		for index := 0; index < dbNum; index++ {
-			r = append(r, "db"+strconv.Itoa(index))
-		}
-		return r, keys
-	}
-
-	onSelect := func(t *DBTree, node *tview.TreeNode, typ string) {
-		switch typ {
-		case "db":
-			dbNum, err := client.GetDatabases()
+			dbNum, err := t.redis.GetDatabases()
 			if err != nil {
 				log.Fatalln(err)
 			}
@@ -144,13 +116,23 @@ func main() {
 				t.AddNode(node, "db"+strconv.Itoa(index), "index")
 			}
 		case "index":
+			for _, v := range t.redis.Keys("*") {
+				t.AddNode(node, v, nil)
+			}
 		}
+	} else {
+		node.SetExpanded(!node.IsExpanded())
 	}
+}
+
+func main() {
+	client := NewRedis("127.0.0.1:6379")
+	defer client.Close()
 
 	pages := tview.NewPages()
 
-	tree := NewDBTree("127.0.0.1")
-	tree1 := NewDBTree("127.0.0.1")
+	tree := NewDBTree("127.0.0.1", client)
+	tree1 := NewDBTree("127.0.0.1", client)
 
 	keyFlexBox := tview.NewFlex()
 	keyFlexBox.SetDirection(tview.FlexRow)
