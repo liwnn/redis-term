@@ -68,16 +68,16 @@ func (r *RESPReader) ReadObject() (*Object, error) {
 
 	switch line[0] {
 	case SIMPLE_STRING: // +OK\r\n
-		return NewObject(SimpleStr, line[1:]), nil
+		return NewObject(SimpleStr, line[1:len(line)-2]), nil
 	case ERROR:
-		return NewObject(Err, line[1:]), fmt.Errorf("(error) %s", line[1:])
+		return NewObject(Err, line[1:len(line)-2]), fmt.Errorf("(error) %s", line[1:len(line)-2])
 	case INTEGER: // :99\r\n  -ERR unknown command 'GETT'\r\n
-		return NewObject(Int, line[1:]), nil
+		return NewObject(Int, line[1:len(line)-2]), nil
 	case BULK_STRING: // $13\r\nHello, World!\r\n
-		b, err := r.readBulkString(line)
+		b, err := r.readBulkString(line[:len(line)-2])
 		return NewObject(BulkStr, b), err
 	case ARRAY: // *3\r\n$3\r\nSET\r\n$5\r\nmykey\r\n$8\r\nmy value\r\n
-		return r.readArray(line)
+		return r.readArray(line[:len(line)-2])
 	default:
 		return nil, ErrInvalidSyntax
 	}
@@ -130,7 +130,6 @@ func (r *RESPReader) readLine() (line []byte, err error) {
 	}
 
 	if len(line) > 1 && line[len(line)-2] == '\r' {
-		line = line[:len(line)-2]
 		return line, nil
 	}
 	return nil, ErrInvalidSyntax

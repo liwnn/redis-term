@@ -77,6 +77,23 @@ func (r *Redis) Get(key string) string {
 	return result.String()
 }
 
+// Select select index
+func (r *Redis) Select(index int) {
+	result, err := r.client.Do("SELECT", strconv.Itoa(index))
+	if err != nil {
+		log.Fatalln(err)
+	}
+	if result.String() != "OK" {
+		log.Fatalln(result.String())
+	}
+}
+
+// Reference referenct
+type Reference struct {
+	Name  string
+	Index int
+}
+
 // DBTree tree.
 type DBTree struct {
 	root *tview.TreeNode
@@ -88,7 +105,9 @@ type DBTree struct {
 // NewDBTree new
 func NewDBTree(rootName string, redis *Redis) *DBTree {
 	root := tview.NewTreeNode(rootName).SetColor(tcell.ColorRed)
-	root.SetReference("db")
+	root.SetReference(&Reference{
+		Name: "db",
+	})
 	tree := tview.NewTreeView().SetRoot(root).SetCurrentNode(root)
 	dbTree := &DBTree{
 		root:  root,
@@ -101,7 +120,7 @@ func NewDBTree(rootName string, redis *Redis) *DBTree {
 }
 
 // AddNode add node
-func (t *DBTree) AddNode(target *tview.TreeNode, name string, reference interface{}) {
+func (t *DBTree) AddNode(target *tview.TreeNode, name string, reference *Reference) {
 	node := tview.NewTreeNode(name).SetSelectable(true)
 	if reference != nil {
 		node.SetReference(reference)
@@ -119,11 +138,11 @@ func (t *DBTree) OnSelected(node *tview.TreeNode) {
 	}
 	childen := node.GetChildren()
 	if len(childen) == 0 {
-		typ, ok := reference.(string)
+		typ, ok := reference.(*Reference)
 		if !ok {
 			log.Fatalf("reference \n")
 		}
-		switch typ {
+		switch typ.Name {
 		case "db":
 			dbNum, err := t.redis.GetDatabases()
 			if err != nil {
@@ -131,11 +150,17 @@ func (t *DBTree) OnSelected(node *tview.TreeNode) {
 			}
 
 			for index := 0; index < dbNum; index++ {
-				t.AddNode(node, "db"+strconv.Itoa(index), "index")
+				t.AddNode(node, "db"+strconv.Itoa(index), &Reference{
+					Name:  "index",
+					Index: index,
+				})
 			}
 		case "index":
+			t.redis.Select(typ.Index)
 			for _, v := range t.redis.Keys("*") {
-				t.AddNode(node, v, "key")
+				t.AddNode(node, v, &Reference{
+					Name: "key",
+				})
 			}
 		}
 	} else {
@@ -149,11 +174,12 @@ func (t *DBTree) OnChanged(node *tview.TreeNode) {
 	if reference == nil {
 		return
 	}
-	typ, ok := reference.(string)
+	previewText.SetText("")
+	typ, ok := reference.(*Reference)
 	if !ok {
 		log.Fatalf("reference \n")
 	}
-	if typ == "key" {
+	if typ.Name == "key" {
 		val := t.redis.Type(node.GetText())
 		switch val {
 		case "string":
@@ -168,7 +194,7 @@ var (
 )
 
 func main() {
-	client := NewRedis("127.0.0.1:9898")
+	client := NewRedis("127.0.0.1:6379")
 	defer client.Close()
 
 	pages := tview.NewPages()
