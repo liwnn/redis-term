@@ -61,7 +61,16 @@ func (r *Redis) Keys(pattern string) []string {
 
 // Type type
 func (r *Redis) Type(key string) string {
-	result, err := r.client.Do("TYPE", key)
+	result, err := r.client.Do("type", key)
+	if err != nil {
+		return ""
+	}
+	return result.String()
+}
+
+// Get get
+func (r *Redis) Get(key string) string {
+	result, err := r.client.Do("GET", key)
 	if err != nil {
 		return ""
 	}
@@ -148,7 +157,8 @@ func (t *DBTree) OnChanged(node *tview.TreeNode) {
 		val := t.redis.Type(node.GetText())
 		switch val {
 		case "string":
-			previewText.SetText(val)
+			v := t.redis.Get(node.GetText())
+			previewText.SetText(v)
 		}
 	}
 }
