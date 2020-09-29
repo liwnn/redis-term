@@ -37,21 +37,15 @@ func (r *Result) List() ([]string, error) {
 	return s, nil
 }
 
-//func (r Reply) String(writer io.Writer) error {
-//    switch r.object.Type {
-//    case SimpleStr:
-//        d := r.object.val
-//        if isText(d) {
-//            fmt.Fprintf(writer, "%s\n", string(d))
-//        } else {
-//            for _, b := range d {
-//                //s := strconv.FormatInt(int64(b&0xff), 16)
-//                fmt.Fprintf(writer, "\\x%02x", b)
-//            }
-//            fmt.Fprintf(writer, "\n")
-//        }
-//        return nil
-//    default:
-//        return fmt.Errorf("convert %s to string", r.object)
-//    }
-//}
+// String return string.
+func (r *Result) String() string {
+	switch r.object.Type {
+	case Err:
+		return r.object.val.(error).Error()
+	case SimpleStr:
+		return string(r.object.val.([]byte))
+	case BulkStr:
+		return string(r.object.val.([]byte))
+	}
+	return ""
+}

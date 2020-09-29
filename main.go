@@ -59,6 +59,15 @@ func (r *Redis) Keys(pattern string) []string {
 	return d
 }
 
+// Type type
+func (r *Redis) Type(key string) string {
+	result, err := r.client.Do("TYPE", key)
+	if err != nil {
+		return ""
+	}
+	return result.String()
+}
+
 // DBTree tree.
 type DBTree struct {
 	root *tview.TreeNode
@@ -77,8 +86,8 @@ func NewDBTree(rootName string, redis *Redis) *DBTree {
 		tree:  tree,
 		redis: redis,
 	}
-	//tree.SetGraphics(false)
 	tree.SetSelectedFunc(dbTree.OnSelected)
+	tree.SetChangedFunc(dbTree.OnChanged)
 	return dbTree
 }
 
@@ -117,7 +126,7 @@ func (t *DBTree) OnSelected(node *tview.TreeNode) {
 			}
 		case "index":
 			for _, v := range t.redis.Keys("*") {
-				t.AddNode(node, v, nil)
+				t.AddNode(node, v, "key")
 			}
 		}
 	} else {
@@ -125,25 +134,46 @@ func (t *DBTree) OnSelected(node *tview.TreeNode) {
 	}
 }
 
+// OnChanged on change
+func (t *DBTree) OnChanged(node *tview.TreeNode) {
+	reference := node.GetReference()
+	if reference == nil {
+		return
+	}
+	typ, ok := reference.(string)
+	if !ok {
+		log.Fatalf("reference \n")
+	}
+	if typ == "key" {
+		val := t.redis.Type(node.GetText())
+		switch val {
+		case "string":
+			previewText.SetText(val)
+		}
+	}
+}
+
+var (
+	previewText *tview.TextView
+)
+
 func main() {
-	client := NewRedis("127.0.0.1:6379")
+	client := NewRedis("127.0.0.1:9898")
 	defer client.Close()
 
 	pages := tview.NewPages()
 
 	tree := NewDBTree("127.0.0.1", client)
-	tree1 := NewDBTree("127.0.0.1", client)
 
 	keyFlexBox := tview.NewFlex()
 	keyFlexBox.SetDirection(tview.FlexRow)
 	keyFlexBox.SetBorder(true)
 	keyFlexBox.SetTitle("KEYS")
 	keyFlexBox.AddItem(tree.tree, 0, 1, true)
-	keyFlexBox.AddItem(tree1.tree, 0, 1, false)
 
 	previewFlexBox := tview.NewFlex()
 	previewFlexBox.SetDirection(tview.FlexRow)
-	previewText := tview.NewTextView()
+	previewText = tview.NewTextView()
 	previewText.
 		SetDynamicColors(true).
 		SetRegions(true).
