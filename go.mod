@@ -1,4 +1,4 @@
-module redis-term
+module redisterm
 
 go 1.13
 

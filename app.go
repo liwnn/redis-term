@@ -1,92 +1,13 @@
-package main
+package redisterm
 
 import (
+	"fmt"
 	"log"
-	"net"
 	"strconv"
-
-	"redis-term/redis"
 
 	"github.com/gdamore/tcell"
 	"github.com/rivo/tview"
 )
-
-// Redis client
-type Redis struct {
-	client *redis.Client
-}
-
-// NewRedis new
-func NewRedis(address string) *Redis {
-	conn, err := net.Dial("tcp", address)
-	if err != nil {
-		log.Fatalln(err)
-	}
-	client := redis.NewClient(conn)
-	return &Redis{
-		client: client,
-	}
-}
-
-// Close close conn.
-func (r *Redis) Close() {
-	r.client.Close()
-}
-
-// GetDatabases return database count.
-func (r *Redis) GetDatabases() (int, error) {
-	result, err := r.client.Do("config", "get", "databases")
-	if err != nil {
-		return 0, err
-	}
-	d, err := result.List()
-	if err != nil {
-		return 0, err
-	}
-	return strconv.Atoi(d[1])
-}
-
-// Keys keys
-func (r *Redis) Keys(pattern string) []string {
-	result, err := r.client.Do("keys", pattern)
-	if err != nil {
-		return nil
-	}
-	d, err := result.List()
-	if err != nil {
-		return nil
-	}
-	return d
-}
-
-// Type type
-func (r *Redis) Type(key string) string {
-	result, err := r.client.Do("type", key)
-	if err != nil {
-		return ""
-	}
-	return result.String()
-}
-
-// Get get
-func (r *Redis) Get(key string) string {
-	result, err := r.client.Do("GET", key)
-	if err != nil {
-		return ""
-	}
-	return result.String()
-}
-
-// Select select index
-func (r *Redis) Select(index int) {
-	result, err := r.client.Do("SELECT", strconv.Itoa(index))
-	if err != nil {
-		log.Fatalln(err)
-	}
-	if result.String() != "OK" {
-		log.Fatalln(result.String())
-	}
-}
 
 // Reference referenct
 type Reference struct {
@@ -144,6 +65,8 @@ func (t *DBTree) OnSelected(node *tview.TreeNode) {
 		}
 		switch typ.Name {
 		case "db":
+			t.log("OnSelected: %v", typ.Name)
+			t.log("Redis: config get databases")
 			dbNum, err := t.redis.GetDatabases()
 			if err != nil {
 				log.Fatalln(err)
@@ -156,12 +79,16 @@ func (t *DBTree) OnSelected(node *tview.TreeNode) {
 				})
 			}
 		case "index":
+			t.log("OnSelected: %v %v", typ.Name, typ.Index)
+			t.log("Redis: select %v", typ.Index)
 			t.redis.Select(typ.Index)
 			for _, v := range t.redis.Keys("*") {
 				t.AddNode(node, v, &Reference{
 					Name: "key",
 				})
 			}
+		default:
+			t.log("%v: %v", "OnSelected", typ.Name)
 		}
 	} else {
 		node.SetExpanded(!node.IsExpanded())
@@ -180,6 +107,8 @@ func (t *DBTree) OnChanged(node *tview.TreeNode) {
 		log.Fatalf("reference \n")
 	}
 	if typ.Name == "key" {
+		t.log("OnChanged: %v - %v", typ.Name, node.GetText())
+		t.log("Redis: get %v", node.GetText())
 		val := t.redis.Type(node.GetText())
 		switch val {
 		case "string":
@@ -189,12 +118,19 @@ func (t *DBTree) OnChanged(node *tview.TreeNode) {
 	}
 }
 
+func (t *DBTree) log(format string, params ...interface{}) {
+	fmt.Fprintf(outputText, format, params...)
+	fmt.Fprintln(outputText)
+}
+
 var (
 	previewText *tview.TextView
+	outputText  *tview.TextView
 )
 
-func main() {
-	client := NewRedis("127.0.0.1:6379")
+// Run run
+func Run() {
+	client := NewRedis("127.0.0.1:9898")
 	defer client.Close()
 
 	pages := tview.NewPages()
@@ -218,7 +154,11 @@ func main() {
 		SetBorder(true).
 		SetBorderColor(tcell.ColorSteelBlue)
 
-	previewFlexBox.AddItem(previewText, 0, 10, false)
+	outputText = tview.NewTextView()
+	outputText.SetScrollable(true).SetTitle("CONSOLE").SetBorder(true)
+
+	previewFlexBox.AddItem(previewText, 0, 3, false)
+	previewFlexBox.AddItem(outputText, 0, 1, false)
 
 	mainFlexBox := tview.NewFlex().SetDirection(tview.FlexColumn).
 		AddItem(keyFlexBox, 0, 1, true).

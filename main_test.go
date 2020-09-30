@@ -1,4 +1,4 @@
-package main
+package redisterm
 
 import "testing"
 
