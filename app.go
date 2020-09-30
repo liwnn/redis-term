@@ -57,16 +57,15 @@ func (t *DBTree) OnSelected(node *tview.TreeNode) {
 	if reference == nil {
 		return
 	}
+	typ, ok := reference.(*Reference)
+	if !ok {
+		log.Fatalf("reference \n")
+	}
 	childen := node.GetChildren()
 	if len(childen) == 0 {
-		typ, ok := reference.(*Reference)
-		if !ok {
-			log.Fatalf("reference \n")
-		}
 		switch typ.Name {
 		case "db":
-			t.log("OnSelected: %v", typ.Name)
-			t.log("Redis: config get databases")
+			Log("OnSelected: %v", typ.Name)
 			dbNum, err := t.redis.GetDatabases()
 			if err != nil {
 				log.Fatalln(err)
@@ -79,16 +78,14 @@ func (t *DBTree) OnSelected(node *tview.TreeNode) {
 				})
 			}
 		case "index":
-			t.log("OnSelected: %v %v", typ.Name, typ.Index)
-			t.log("Redis: select %v", typ.Index)
+			Log("OnSelected: %v %v", typ.Name, typ.Index)
 			t.redis.Select(typ.Index)
 			for _, v := range t.redis.Keys("*") {
 				t.AddNode(node, v, &Reference{
-					Name: "key",
+					Name:  "key",
+					Index: typ.Index,
 				})
 			}
-		default:
-			t.log("%v: %v", "OnSelected", typ.Name)
 		}
 	} else {
 		node.SetExpanded(!node.IsExpanded())
@@ -107,20 +104,17 @@ func (t *DBTree) OnChanged(node *tview.TreeNode) {
 		log.Fatalf("reference \n")
 	}
 	if typ.Name == "key" {
-		t.log("OnChanged: %v - %v", typ.Name, node.GetText())
-		t.log("Redis: get %v", node.GetText())
+		Log("OnChanged: %v - %v", typ.Name, node.GetText())
+		t.redis.Select(typ.Index)
 		val := t.redis.Type(node.GetText())
 		switch val {
 		case "string":
 			v := t.redis.Get(node.GetText())
 			previewText.SetText(v)
+		default:
+			previewText.SetText(fmt.Sprintf("%v not implement!!!", val))
 		}
 	}
-}
-
-func (t *DBTree) log(format string, params ...interface{}) {
-	fmt.Fprintf(outputText, format, params...)
-	fmt.Fprintln(outputText)
 }
 
 var (
@@ -130,7 +124,7 @@ var (
 
 // Run run
 func Run() {
-	client := NewRedis("127.0.0.1:9898")
+	client := NewRedis("127.0.0.1:6379")
 	defer client.Close()
 
 	pages := tview.NewPages()

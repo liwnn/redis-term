@@ -11,6 +11,7 @@ import (
 // Redis client
 type Redis struct {
 	client *redis.Client
+	index  int
 }
 
 // NewRedis new
@@ -40,6 +41,8 @@ func (r *Redis) GetDatabases() (int, error) {
 	if err != nil {
 		return 0, err
 	}
+
+	Log("Redis: config get databases")
 	return strconv.Atoi(d[1])
 }
 
@@ -62,6 +65,7 @@ func (r *Redis) Type(key string) string {
 	if err != nil {
 		return ""
 	}
+	Log("Redis: type %v", key)
 	return result.String()
 }
 
@@ -71,11 +75,16 @@ func (r *Redis) Get(key string) string {
 	if err != nil {
 		return ""
 	}
+
+	Log("Redis: get %v", key)
 	return result.String()
 }
 
 // Select select index
 func (r *Redis) Select(index int) {
+	if index == r.index {
+		return
+	}
 	result, err := r.client.Do("SELECT", strconv.Itoa(index))
 	if err != nil {
 		log.Fatalln(err)
@@ -83,4 +92,7 @@ func (r *Redis) Select(index int) {
 	if result.String() != "OK" {
 		log.Fatalln(result.String())
 	}
+	r.index = index
+
+	Log("Redis: select %v", index)
 }
