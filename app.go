@@ -17,7 +17,6 @@ type Reference struct {
 
 // DBTree tree.
 type DBTree struct {
-	root *tview.TreeNode
 	tree *tview.TreeView
 
 	redis *Redis
@@ -31,7 +30,6 @@ func NewDBTree(rootName string, redis *Redis) *DBTree {
 	})
 	tree := tview.NewTreeView().SetRoot(root).SetCurrentNode(root)
 	dbTree := &DBTree{
-		root:  root,
 		tree:  tree,
 		redis: redis,
 	}
@@ -122,13 +120,13 @@ var (
 )
 
 // Run run
-func Run() {
-	client := NewRedis("127.0.0.1:9898")
+func Run(host string, port int) {
+	client := NewRedis(fmt.Sprintf("%v:%v", host, port))
 	defer client.Close()
 
 	pages := tview.NewPages()
 
-	tree := NewDBTree("127.0.0.1", client)
+	tree := NewDBTree(host, client)
 
 	keyFlexBox := tview.NewFlex()
 	keyFlexBox.SetDirection(tview.FlexRow)
