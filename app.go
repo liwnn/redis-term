@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"strings"
 
 	"github.com/gdamore/tcell"
 	"github.com/rivo/tview"
@@ -78,8 +79,9 @@ func (t *DBTree) OnSelected(node *tview.TreeNode) {
 		case "index":
 			Log("OnSelected: %v %v", typ.Name, typ.Index)
 			t.redis.Select(typ.Index)
-			for _, v := range t.redis.Keys("*") {
-				t.AddNode(node, v, &Reference{
+			keys := t.redis.Keys("*")
+			for k := range keysClassify(keys) {
+				t.AddNode(node, k, &Reference{
 					Name:  "key",
 					Index: typ.Index,
 				})
@@ -107,12 +109,66 @@ func (t *DBTree) OnChanged(node *tview.TreeNode) {
 		val := t.redis.Type(node.GetText())
 		switch val {
 		case "string":
-			v := t.redis.Get(node.GetText())
-			previewText.SetText(v)
+			b := t.redis.GetByte(node.GetText())
+			if isText(b) {
+				previewText.SetText(string(b))
+			} else {
+				data := encodeToString(b)
+				previewText.SetText(data)
+			}
 		default:
 			previewText.SetText(fmt.Sprintf("%v not implement!!!", val))
 		}
 	}
+}
+
+type node struct {
+	name string
+	next []*node
+}
+
+func keysClassify(keys []string) map[string][]*node {
+	var r = make(map[string][]*node)
+	for _, v := range keys {
+		var name string
+		index := strings.Index(v, ":")
+		if index == -1 {
+			name = v
+		} else {
+			name = v[:index]
+		}
+		r[name] = append(r[name], &node{
+			name: name,
+		})
+	}
+	return r
+}
+
+func encodeToString(src []byte) string {
+	const hextable = "0123456789ABCDEF"
+	dst := make([]byte, len(src)*4)
+	j := 0
+	for _, v := range src {
+		dst[j] = '\\'
+		dst[j+1] = 'x'
+		dst[j+2] = hextable[v>>4]
+		dst[j+3] = hextable[v&0x0f]
+		j += 4
+	}
+	return string(dst)
+}
+
+func isText(b []byte) bool {
+	var count int
+	for _, v := range b {
+		if v == 0 { // '\0' 则不是文本
+			return false
+		}
+		if v>>7 == 1 {
+			count++
+		}
+	}
+	return count/30 >= len(b)/100
 }
 
 var (

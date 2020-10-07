@@ -80,6 +80,17 @@ func (r *Redis) Get(key string) string {
 	return result.String()
 }
 
+// GetByte get
+func (r *Redis) GetByte(key string) []byte {
+	result, err := r.client.Do("GET", key)
+	if err != nil {
+		return nil
+	}
+
+	Log("Redis: get %v", key)
+	return result.Byte()
+}
+
 // Select select index
 func (r *Redis) Select(index int) {
 	if index == r.index {

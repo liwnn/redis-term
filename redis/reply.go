@@ -49,3 +49,14 @@ func (r *Result) String() string {
 	}
 	return ""
 }
+
+// Byte returns []byte.
+func (r *Result) Byte() []byte {
+	if r.object.Type == Err {
+		return nil
+	}
+	if !(r.object.Type == SimpleStr || r.object.Type == BulkStr) {
+		return nil
+	}
+	return r.object.val.([]byte)
+}
