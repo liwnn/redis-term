@@ -8,10 +8,15 @@ import (
 	"github.com/rivo/tview"
 )
 
+var (
+	previewText *tview.TextView
+)
+
 // Reference referenct
 type Reference struct {
 	Name  string
 	Index int
+	Data  *DataNode
 }
 
 // DBTree tree.
@@ -42,7 +47,6 @@ func (t *DBTree) AddNode(target *tview.TreeNode, name string, reference *Referen
 	if reference != nil {
 		node.SetReference(reference)
 	}
-	//node.SetIndent(0)
 	node.SetColor(tcell.ColorGreen)
 	target.AddChild(node)
 }
@@ -62,20 +66,42 @@ func (t *DBTree) OnSelected(node *tview.TreeNode) {
 		switch typ.Name {
 		case "db":
 			Log("OnSelected: %v", typ.Name)
-			for i, v := range t.data.GetDatabases() {
-				t.AddNode(node, v, &Reference{
+			for i, dataNode := range t.data.GetDatabases() {
+				t.AddNode(node, dataNode.name, &Reference{
 					Name:  "index",
 					Index: i,
+					Data:  dataNode,
 				})
 			}
 		case "index":
 			Log("OnSelected: %v %v", typ.Name, typ.Index)
-			keys := t.data.GetKeys(typ.Index)
-			for _, k := range keys {
-				t.AddNode(node, k, &Reference{
-					Name:  "key",
+			dataNodes := t.data.GetKeys(typ.Index)
+			for _, dataNode := range dataNodes {
+				r := &Reference{
 					Index: typ.Index,
-				})
+					Data:  dataNode,
+				}
+				if dataNode.CanExpand() {
+					r.Name = "dir"
+				} else {
+					r.Name = "key"
+				}
+				t.AddNode(node, dataNode.name, r)
+			}
+		case "dir":
+			Log("OnSelected: %v %v", typ.Name, typ.Index)
+			dataNodes := t.data.GetChildren(typ.Data)
+			for _, dataNode := range dataNodes {
+				r := &Reference{
+					Index: typ.Index,
+					Data:  dataNode,
+				}
+				if dataNode.CanExpand() {
+					r.Name = "dir"
+				} else {
+					r.Name = "key"
+				}
+				t.AddNode(node, dataNode.name, r)
 			}
 		}
 	} else {
@@ -95,15 +121,11 @@ func (t *DBTree) OnChanged(node *tview.TreeNode) {
 		log.Fatalf("reference \n")
 	}
 	if typ.Name == "key" {
-		Log("OnChanged: %v - %v", typ.Name, node.GetText())
-		text := t.data.GetValue(typ.Index, node.GetText())
+		Log("OnChanged: %v - %v", typ.Name, typ.Data.key)
+		text := t.data.GetValue(typ.Index, typ.Data.key)
 		previewText.SetText(text)
 	}
 }
-
-var (
-	previewText *tview.TextView
-)
 
 // Run run
 func Run(host string, port int) {

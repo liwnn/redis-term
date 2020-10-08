@@ -22,6 +22,16 @@ type DataTree struct {
 	root *DataNode
 }
 
+// NewDataTree new
+func NewDataTree(rootName string) *DataTree {
+	t := &DataTree{
+		root: &DataNode{
+			name: rootName,
+		},
+	}
+	return t
+}
+
 // AddKey 增加key
 func (t *DataTree) AddKey(key string) {
 	t.addNode(t.root, key, key)
@@ -36,6 +46,7 @@ func (t *DataTree) addNode(p *DataNode, name, key string) {
 		if n == nil {
 			n = &DataNode{
 				name: key,
+				key:  key,
 			}
 			p.child = append(p.child, n)
 		}
@@ -44,6 +55,7 @@ func (t *DataTree) addNode(p *DataNode, name, key string) {
 		if n == nil {
 			n = &DataNode{
 				name: name[:index],
+				key:  key,
 			}
 			p.child = append(p.child, n)
 		}
@@ -58,6 +70,11 @@ func (t *DataTree) getNodeByName(p *DataNode, name string) *DataNode {
 		}
 	}
 	return nil
+}
+
+// GetChildren name
+func (t *DataTree) GetChildren(p *DataNode) []*DataNode {
+	return p.child
 }
 
 // Dump 输出

@@ -2,41 +2,60 @@ package redisterm
 
 import (
 	"fmt"
-	"log"
 	"strconv"
 )
 
 // Data data
 type Data struct {
 	redis *Redis
+
+	db []*DataTree
 }
 
 // NewData new
 func NewData(redis *Redis) *Data {
-	return &Data{
+	r := &Data{
 		redis: redis,
 	}
+
+	return r
 }
 
 // GetDatabases database name
-func (d *Data) GetDatabases() []string {
-	dbNum, err := d.redis.GetDatabases()
-	if err != nil {
-		log.Fatalln(err)
+func (d *Data) GetDatabases() []*DataNode {
+	if len(d.db) == 0 {
+		dbNum, err := d.redis.GetDatabases()
+		if err != nil {
+			return nil
+		}
+		for index := 0; index < dbNum; index++ {
+			n := NewDataTree("db" + strconv.Itoa(index))
+			d.db = append(d.db, n)
+		}
 	}
 
-	r := make([]string, 0, dbNum)
-	for index := 0; index < dbNum; index++ {
-		r = append(r, "db"+strconv.Itoa(index))
+	r := make([]*DataNode, 0, len(d.db))
+	for _, v := range d.db {
+		r = append(r, v.root)
 	}
 	return r
 }
 
 // GetKeys get key
-func (d *Data) GetKeys(index int) []string {
+func (d *Data) GetKeys(index int) []*DataNode {
 	d.redis.Select(index)
 	keys := d.redis.Keys("*")
-	return keys
+	n := d.db[index]
+	for _, key := range keys {
+		n.AddKey(key)
+	}
+
+	return n.GetChildren(n.root)
+}
+
+// GetChildren child
+func (d *Data) GetChildren(node *DataNode) []*DataNode {
+	return node.child
 }
 
 // GetValue value
