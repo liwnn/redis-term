@@ -142,9 +142,9 @@ func (t *DBTree) OnChanged(node *tview.TreeNode) {
 			})
 
 			for i, kv := range h {
-				previewTable.SetCell(i+1, 0, tview.NewTableCell(strconv.Itoa(i+1)))
-				previewTable.SetCell(i+1, 1, tview.NewTableCell(kv.Key))
-				previewTable.SetCell(i+1, 2, tview.NewTableCell(kv.Value))
+				previewTable.SetCell(i+1, 0, tview.NewTableCell(strconv.Itoa(i+1)).SetExpansion(1))
+				previewTable.SetCell(i+1, 1, tview.NewTableCell(kv.Key).SetExpansion(2))
+				previewTable.SetCell(i+1, 2, tview.NewTableCell(kv.Value).SetExpansion(10))
 			}
 		}
 	}
@@ -177,7 +177,6 @@ func Run(host string, port int) {
 		SetBorderColor(tcell.ColorSteelBlue)
 
 	previewTable = tview.NewTable()
-	previewTable.SetBorders(true)
 	previewTable.GetBackgroundColor()
 
 	outputText := tview.NewTextView()
