@@ -91,6 +91,31 @@ func (r *Redis) GetByte(key string) []byte {
 	return result.Byte()
 }
 
+// KVText kv
+type KVText struct {
+	Key   string
+	Value string
+}
+
+// GetKV hash
+func (r *Redis) GetKV(key string) []KVText {
+	result, err := r.client.Do("HGETAll", key)
+	if err != nil {
+		return nil
+	}
+
+	elems, err := result.List()
+	if err != nil {
+		return nil
+	}
+	h := make([]KVText, 0, len(elems)/2)
+	for i := 0; i < len(elems)/2; i++ {
+		h = append(h, KVText{elems[i*2], elems[i*2+1]})
+	}
+	Log("Redis: get %v", key)
+	return h
+}
+
 // Select select index
 func (r *Redis) Select(index int) {
 	if index == r.index {

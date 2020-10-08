@@ -59,7 +59,7 @@ func (d *Data) GetChildren(node *DataNode) []*DataNode {
 }
 
 // GetValue value
-func (d *Data) GetValue(index int, key string) string {
+func (d *Data) GetValue(index int, key string) interface{} {
 	d.redis.Select(index)
 	val := d.redis.Type(key)
 	switch val {
@@ -69,6 +69,8 @@ func (d *Data) GetValue(index int, key string) string {
 			return (string(b))
 		}
 		return encodeToHexString(b)
+	case "hash":
+		return d.redis.GetKV(key)
 	default:
 		return fmt.Sprintf("%v not implement!!!", val)
 	}
