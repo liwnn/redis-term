@@ -3,8 +3,6 @@ package redisterm
 import (
 	"fmt"
 	"log"
-	"strconv"
-	"strings"
 
 	"github.com/gdamore/tcell"
 	"github.com/rivo/tview"
@@ -19,20 +17,19 @@ type Reference struct {
 // DBTree tree.
 type DBTree struct {
 	tree *tview.TreeView
-
-	redis *Redis
+	data *Data
 }
 
 // NewDBTree new
-func NewDBTree(rootName string, redis *Redis) *DBTree {
+func NewDBTree(rootName string, data *Data) *DBTree {
 	root := tview.NewTreeNode(rootName).SetColor(tcell.ColorRed)
 	root.SetReference(&Reference{
 		Name: "db",
 	})
 	tree := tview.NewTreeView().SetRoot(root).SetCurrentNode(root)
 	dbTree := &DBTree{
-		tree:  tree,
-		redis: redis,
+		tree: tree,
+		data: data,
 	}
 	tree.SetSelectedFunc(dbTree.OnSelected)
 	tree.SetChangedFunc(dbTree.OnChanged)
@@ -65,22 +62,16 @@ func (t *DBTree) OnSelected(node *tview.TreeNode) {
 		switch typ.Name {
 		case "db":
 			Log("OnSelected: %v", typ.Name)
-			dbNum, err := t.redis.GetDatabases()
-			if err != nil {
-				log.Fatalln(err)
-			}
-
-			for index := 0; index < dbNum; index++ {
-				t.AddNode(node, "db"+strconv.Itoa(index), &Reference{
+			for i, v := range t.data.GetDatabases() {
+				t.AddNode(node, v, &Reference{
 					Name:  "index",
-					Index: index,
+					Index: i,
 				})
 			}
 		case "index":
 			Log("OnSelected: %v %v", typ.Name, typ.Index)
-			t.redis.Select(typ.Index)
-			keys := t.redis.Keys("*")
-			for k := range keysClassify(keys) {
+			keys := t.data.GetKeys(typ.Index)
+			for _, k := range keys {
 				t.AddNode(node, k, &Reference{
 					Name:  "key",
 					Index: typ.Index,
@@ -105,70 +96,9 @@ func (t *DBTree) OnChanged(node *tview.TreeNode) {
 	}
 	if typ.Name == "key" {
 		Log("OnChanged: %v - %v", typ.Name, node.GetText())
-		t.redis.Select(typ.Index)
-		val := t.redis.Type(node.GetText())
-		switch val {
-		case "string":
-			b := t.redis.GetByte(node.GetText())
-			if isText(b) {
-				previewText.SetText(string(b))
-			} else {
-				data := encodeToString(b)
-				previewText.SetText(data)
-			}
-		default:
-			previewText.SetText(fmt.Sprintf("%v not implement!!!", val))
-		}
+		text := t.data.GetValue(typ.Index, node.GetText())
+		previewText.SetText(text)
 	}
-}
-
-type node struct {
-	name string
-	next []*node
-}
-
-func keysClassify(keys []string) map[string][]*node {
-	var r = make(map[string][]*node)
-	for _, v := range keys {
-		var name string
-		index := strings.Index(v, ":")
-		if index == -1 {
-			name = v
-		} else {
-			name = v[:index]
-		}
-		r[name] = append(r[name], &node{
-			name: name,
-		})
-	}
-	return r
-}
-
-func encodeToString(src []byte) string {
-	const hextable = "0123456789ABCDEF"
-	dst := make([]byte, len(src)*4)
-	j := 0
-	for _, v := range src {
-		dst[j] = '\\'
-		dst[j+1] = 'x'
-		dst[j+2] = hextable[v>>4]
-		dst[j+3] = hextable[v&0x0f]
-		j += 4
-	}
-	return string(dst)
-}
-
-func isText(b []byte) bool {
-	var count int
-	for _, v := range b {
-		if v == 0 { // '\0' 则不是文本
-			return false
-		}
-		if v>>7 == 1 {
-			count++
-		}
-	}
-	return count/30 >= len(b)/100
 }
 
 var (
@@ -179,10 +109,10 @@ var (
 func Run(host string, port int) {
 	client := NewRedis(fmt.Sprintf("%v:%v", host, port))
 	defer client.Close()
+	data := NewData(client)
 
 	pages := tview.NewPages()
-
-	tree := NewDBTree(host, client)
+	tree := NewDBTree(host, data)
 
 	keyFlexBox := tview.NewFlex()
 	keyFlexBox.SetDirection(tview.FlexRow)
