@@ -9,10 +9,10 @@ import (
 
 // Preview preview
 type Preview struct {
-	flexBox      *tview.Flex
-	previewText  *tview.TextView
-	previewTable *tview.Table
-	outputText   *tview.TextView
+	flexBox  *tview.Flex
+	textView *tview.TextView
+	table    *tview.Table
+	output   *tview.TextView
 }
 
 // NewPreview new
@@ -45,10 +45,10 @@ func NewPreview() *Preview {
 	outputText.SetScrollable(true).SetTitle("CONSOLE").SetBorder(true)
 
 	p := &Preview{
-		flexBox:      previewFlexBox,
-		previewText:  previewText,
-		previewTable: previewTable,
-		outputText:   outputText,
+		flexBox:  previewFlexBox,
+		textView: previewText,
+		table:    previewTable,
+		output:   outputText,
 	}
 	return p
 }
@@ -58,40 +58,40 @@ func (p *Preview) SetContent(o interface{}) {
 	switch o.(type) {
 	case string:
 		p.flexBox.Clear()
-		p.flexBox.AddItem(p.previewText, 0, 3, false)
-		p.flexBox.AddItem(p.outputText, 0, 1, false)
-		p.previewText.SetText(o.(string))
+		p.flexBox.AddItem(p.textView, 0, 3, false)
+		p.flexBox.AddItem(p.output, 0, 1, false)
+		p.textView.SetText(o.(string))
 	case []KVText:
 		p.flexBox.Clear()
-		p.flexBox.AddItem(p.previewTable, 0, 3, false)
-		p.flexBox.AddItem(p.outputText, 0, 1, false)
+		p.flexBox.AddItem(p.table, 0, 3, false)
+		p.flexBox.AddItem(p.output, 0, 1, false)
 		h := o.([]KVText)
-		p.previewTable.Clear()
-		p.previewTable.SetCell(0, 0, tview.NewTableCell("row").SetExpansion(1).SetSelectable(false).SetTextColor(tcell.ColorYellow))
-		p.previewTable.SetCell(0, 1, tview.NewTableCell("key").SetExpansion(3).SetSelectable(false).SetTextColor(tcell.ColorYellow))
-		p.previewTable.SetCell(0, 2, tview.NewTableCell("value").SetExpansion(24).SetSelectable(false).SetTextColor(tcell.ColorYellow))
-		p.previewTable.Select(1, 1)
-		p.previewTable.ScrollToBeginning()
+		p.table.Clear()
+		p.table.SetCell(0, 0, tview.NewTableCell("row").SetExpansion(1).SetSelectable(false).SetTextColor(tcell.ColorYellow))
+		p.table.SetCell(0, 1, tview.NewTableCell("key").SetExpansion(3).SetSelectable(false).SetTextColor(tcell.ColorYellow))
+		p.table.SetCell(0, 2, tview.NewTableCell("value").SetExpansion(24).SetSelectable(false).SetTextColor(tcell.ColorYellow))
+		p.table.Select(1, 1)
+		p.table.ScrollToBeginning()
 
 		for i, kv := range h {
-			p.previewTable.SetCell(i+1, 0, tview.NewTableCell(strconv.Itoa(i+1)))
-			p.previewTable.SetCell(i+1, 1, tview.NewTableCell(kv.Key))
-			p.previewTable.SetCell(i+1, 2, tview.NewTableCell(kv.Value))
+			p.table.SetCell(i+1, 0, tview.NewTableCell(strconv.Itoa(i+1)))
+			p.table.SetCell(i+1, 1, tview.NewTableCell(kv.Key))
+			p.table.SetCell(i+1, 2, tview.NewTableCell(kv.Value))
 		}
 	case []string:
 		p.flexBox.Clear()
-		p.flexBox.AddItem(p.previewTable, 0, 3, false)
-		p.flexBox.AddItem(p.outputText, 0, 1, false)
+		p.flexBox.AddItem(p.table, 0, 3, false)
+		p.flexBox.AddItem(p.output, 0, 1, false)
 		h := o.([]string)
-		p.previewTable.Clear()
-		p.previewTable.SetCell(0, 0, tview.NewTableCell("row").SetExpansion(1).SetSelectable(false).SetTextColor(tcell.ColorYellow))
-		p.previewTable.SetCell(0, 1, tview.NewTableCell("value").SetExpansion(20).SetSelectable(false).SetTextColor(tcell.ColorYellow))
-		p.previewTable.Select(1, 1)
-		p.previewTable.ScrollToBeginning()
+		p.table.Clear()
+		p.table.SetCell(0, 0, tview.NewTableCell("row").SetExpansion(1).SetSelectable(false).SetTextColor(tcell.ColorYellow))
+		p.table.SetCell(0, 1, tview.NewTableCell("value").SetExpansion(20).SetSelectable(false).SetTextColor(tcell.ColorYellow))
+		p.table.Select(1, 1)
+		p.table.ScrollToBeginning()
 
 		for i, v := range h {
-			p.previewTable.SetCell(i+1, 0, tview.NewTableCell(strconv.Itoa(i+1)))
-			p.previewTable.SetCell(i+1, 1, tview.NewTableCell(v))
+			p.table.SetCell(i+1, 0, tview.NewTableCell(strconv.Itoa(i+1)))
+			p.table.SetCell(i+1, 1, tview.NewTableCell(v))
 		}
 	}
 }
