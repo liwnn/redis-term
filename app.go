@@ -134,7 +134,6 @@ func Run(host string, port int) {
 	defer client.Close()
 	data := NewData(client)
 
-	pages := tview.NewPages()
 	tree := NewDBTree(host, data)
 
 	keyFlexBox := tview.NewFlex()
@@ -144,11 +143,13 @@ func Run(host string, port int) {
 	keyFlexBox.AddItem(tree.tree, 0, 1, true)
 
 	preview = NewPreview()
+	SetLogger(preview.output)
 
 	mainFlexBox := tview.NewFlex().SetDirection(tview.FlexColumn).
 		AddItem(keyFlexBox, 0, 1, true).
 		AddItem(preview.flexBox, 0, 4, false)
 
+	pages := tview.NewPages()
 	pages.AddPage("main", mainFlexBox, true, true)
 
 	app := tview.NewApplication()

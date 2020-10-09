@@ -9,24 +9,41 @@ import (
 
 // Preview preview
 type Preview struct {
-	flexBox  *tview.Flex
+	flexBox *tview.Flex
+
+	showFlex *tview.Flex
 	textView *tview.TextView
 	table    *tview.Table
-	output   *tview.TextView
+
+	output *tview.TextView
 }
 
 // NewPreview new
 func NewPreview() *Preview {
-	previewFlexBox := tview.NewFlex()
-	previewFlexBox.SetDirection(tview.FlexRow)
-	previewText := tview.NewTextView()
-	previewText.
-		SetDynamicColors(true).
-		SetRegions(true).
-		SetScrollable(true).
+	button := tview.NewButton("hello")
+
+	showFlex := tview.NewFlex()
+	showFlex.
 		SetTitle("PREVIEW").
 		SetBorder(true).
 		SetBorderColor(tcell.ColorSteelBlue)
+
+	outputText := tview.NewTextView()
+	outputText.
+		SetScrollable(true).
+		SetTitle("CONSOLE").
+		SetBorder(true)
+
+	previewFlexBox := tview.NewFlex()
+	previewFlexBox.SetDirection(tview.FlexRow)
+	previewFlexBox.AddItem(button, 3, 0, false)
+	previewFlexBox.AddItem(showFlex, 0, 3, false)
+	previewFlexBox.AddItem(outputText, 0, 1, false)
+
+	previewText := tview.NewTextView()
+	previewText.
+		SetDynamicColors(true).
+		SetRegions(true)
 
 	previewTable := tview.NewTable()
 	previewTable.SetBorders(false).
@@ -35,20 +52,13 @@ func NewPreview() *Preview {
 		SetFixed(1, 1).
 		SetSelectedStyle(tcell.ColorWhite, tcell.ColorBlue, tcell.AttrBold).
 		SetEvaluateAllRows(true)
-	previewTable.
-		SetTitle("PREVIEW").
-		SetBorder(true).
-		SetBorderColor(tcell.ColorSteelBlue)
-
-	outputText := tview.NewTextView()
-	SetLogger(outputText)
-	outputText.SetScrollable(true).SetTitle("CONSOLE").SetBorder(true)
 
 	p := &Preview{
 		flexBox:  previewFlexBox,
 		textView: previewText,
 		table:    previewTable,
 		output:   outputText,
+		showFlex: showFlex,
 	}
 	return p
 }
@@ -57,14 +67,12 @@ func NewPreview() *Preview {
 func (p *Preview) SetContent(o interface{}) {
 	switch o.(type) {
 	case string:
-		p.flexBox.Clear()
-		p.flexBox.AddItem(p.textView, 0, 3, false)
-		p.flexBox.AddItem(p.output, 0, 1, false)
+		p.showFlex.Clear()
+		p.showFlex.AddItem(p.textView, 0, 1, false)
 		p.textView.SetText(o.(string))
 	case []KVText:
-		p.flexBox.Clear()
-		p.flexBox.AddItem(p.table, 0, 3, false)
-		p.flexBox.AddItem(p.output, 0, 1, false)
+		p.showFlex.Clear()
+		p.showFlex.AddItem(p.table, 0, 1, false)
 		h := o.([]KVText)
 		p.table.Clear()
 		p.table.SetCell(0, 0, tview.NewTableCell("row").SetExpansion(1).SetSelectable(false).SetTextColor(tcell.ColorYellow))
@@ -80,8 +88,7 @@ func (p *Preview) SetContent(o interface{}) {
 		}
 	case []string:
 		p.flexBox.Clear()
-		p.flexBox.AddItem(p.table, 0, 3, false)
-		p.flexBox.AddItem(p.output, 0, 1, false)
+		p.flexBox.AddItem(p.table, 0, 1, false)
 		h := o.([]string)
 		p.table.Clear()
 		p.table.SetCell(0, 0, tview.NewTableCell("row").SetExpansion(1).SetSelectable(false).SetTextColor(tcell.ColorYellow))
