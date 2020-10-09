@@ -27,7 +27,7 @@ type DBTree struct {
 
 // NewDBTree new
 func NewDBTree(rootName string, data *Data) *DBTree {
-	root := tview.NewTreeNode(rootName).SetColor(tcell.ColorRed)
+	root := tview.NewTreeNode(rootName).SetColor(tcell.ColorYellow)
 	root.SetReference(&Reference{
 		Name: "db",
 	})

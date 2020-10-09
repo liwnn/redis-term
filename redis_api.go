@@ -116,6 +116,21 @@ func (r *Redis) GetKV(key string) []KVText {
 	return h
 }
 
+// GetSet set members
+func (r *Redis) GetSet(key string) []string {
+	result, err := r.client.Do("SMEMBERS", key)
+	if err != nil {
+		return nil
+	}
+
+	elems, err := result.List()
+	if err != nil {
+		return nil
+	}
+	Log("Redis: get %v", key)
+	return elems
+}
+
 // Select select index
 func (r *Redis) Select(index int) {
 	if index == r.index {

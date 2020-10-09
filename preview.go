@@ -78,5 +78,20 @@ func (p *Preview) SetContent(o interface{}) {
 			p.previewTable.SetCell(i+1, 1, tview.NewTableCell(kv.Key))
 			p.previewTable.SetCell(i+1, 2, tview.NewTableCell(kv.Value))
 		}
+	case []string:
+		p.flexBox.Clear()
+		p.flexBox.AddItem(p.previewTable, 0, 3, false)
+		p.flexBox.AddItem(p.outputText, 0, 1, false)
+		h := o.([]string)
+		p.previewTable.Clear()
+		p.previewTable.SetCell(0, 0, tview.NewTableCell("row").SetExpansion(1).SetSelectable(false).SetTextColor(tcell.ColorYellow))
+		p.previewTable.SetCell(0, 1, tview.NewTableCell("value").SetExpansion(20).SetSelectable(false).SetTextColor(tcell.ColorYellow))
+		p.previewTable.Select(1, 1)
+		p.previewTable.ScrollToBeginning()
+
+		for i, v := range h {
+			p.previewTable.SetCell(i+1, 0, tview.NewTableCell(strconv.Itoa(i+1)))
+			p.previewTable.SetCell(i+1, 1, tview.NewTableCell(v))
+		}
 	}
 }
