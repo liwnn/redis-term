@@ -20,7 +20,20 @@ type Preview struct {
 
 // NewPreview new
 func NewPreview() *Preview {
-	button := tview.NewButton("hello")
+	prevBtn := tview.NewButton("<-")
+	prevBtn.SetBlurFunc(func(key tcell.Key) {
+	})
+	prevBtn.SetSelectedFunc(func() {
+	})
+	nextBtn := tview.NewButton("->")
+	grid := tview.NewGrid().
+		SetRows(-1).
+		SetColumns(-5, 5, 5, -1).
+		SetBorders(false).
+		SetGap(0, 2).
+		SetMinSize(5, 5)
+	grid.AddItem(prevBtn, 0, 1, 1, 1, 0, 0, false) // 0行1列,占用1行1列(2则向后占一列)
+	grid.AddItem(nextBtn, 0, 2, 1, 1, 0, 0, false)
 
 	showFlex := tview.NewFlex()
 	showFlex.
@@ -36,7 +49,7 @@ func NewPreview() *Preview {
 
 	previewFlexBox := tview.NewFlex()
 	previewFlexBox.SetDirection(tview.FlexRow)
-	previewFlexBox.AddItem(button, 3, 0, false)
+	previewFlexBox.AddItem(grid, 1, 0, false)
 	previewFlexBox.AddItem(showFlex, 0, 3, false)
 	previewFlexBox.AddItem(outputText, 0, 1, false)
 
