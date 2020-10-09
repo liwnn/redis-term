@@ -3,15 +3,13 @@ package redisterm
 import (
 	"fmt"
 	"log"
-	"strconv"
 
 	"github.com/gdamore/tcell"
 	"github.com/rivo/tview"
 )
 
 var (
-	previewText  *tview.TextView
-	previewTable *tview.Table
+	preview *Preview
 )
 
 // Reference referenct
@@ -117,7 +115,6 @@ func (t *DBTree) OnChanged(node *tview.TreeNode) {
 	if reference == nil {
 		return
 	}
-	previewText.SetText("")
 	typ, ok := reference.(*Reference)
 	if !ok {
 		log.Fatalf("reference \n")
@@ -125,30 +122,9 @@ func (t *DBTree) OnChanged(node *tview.TreeNode) {
 	if typ.Name == "key" {
 		Log("OnChanged: %v - %v", typ.Name, typ.Data.key)
 		o := t.data.GetValue(typ.Index, typ.Data.key)
-		switch o.(type) {
-		case string:
-			previewText.SetText(o.(string))
-		case []KVText:
-			h := o.([]KVText)
-			previewTable.Clear()
-			previewTable.SetBorders(false)
-			previewTable.SetSelectable(true, false)
-			previewTable.SetSeparator(' ').SetFixed(1, 1)
-			previewTable.SetCell(0, 0, tview.NewTableCell("row").SetExpansion(1).SetSelectable(false).SetTextColor(tcell.ColorYellow))
-			previewTable.SetCell(0, 1, tview.NewTableCell("key").SetExpansion(2).SetSelectable(false).SetTextColor(tcell.ColorYellow))
-			previewTable.SetCell(0, 2, tview.NewTableCell("value").SetExpansion(10).SetSelectable(false).SetTextColor(tcell.ColorYellow))
-			previewTable.Select(1, 1)
-			previewTable.ScrollToBeginning().SetEvaluateAllRows(true)
-			previewTable.SetSelectedStyle(tcell.ColorWhite, tcell.ColorBlue, tcell.AttrBold)
-			previewTable.SetSelectedFunc(func(row int, column int) {
-			})
-
-			for i, kv := range h {
-				previewTable.SetCell(i+1, 0, tview.NewTableCell(strconv.Itoa(i+1)))
-				previewTable.SetCell(i+1, 1, tview.NewTableCell(kv.Key))
-				previewTable.SetCell(i+1, 2, tview.NewTableCell(kv.Value))
-			}
-		}
+		preview.SetContent(o)
+	} else {
+		preview.SetContent("")
 	}
 }
 
@@ -167,30 +143,11 @@ func Run(host string, port int) {
 	keyFlexBox.SetTitle("KEYS")
 	keyFlexBox.AddItem(tree.tree, 0, 1, true)
 
-	previewFlexBox := tview.NewFlex()
-	previewFlexBox.SetDirection(tview.FlexRow)
-	previewText = tview.NewTextView()
-	previewText.
-		SetDynamicColors(true).
-		SetRegions(true).
-		SetScrollable(true).
-		SetTitle("PREVIEW").
-		SetBorder(true).
-		SetBorderColor(tcell.ColorSteelBlue)
-
-	previewTable = tview.NewTable()
-
-	outputText := tview.NewTextView()
-	SetLogger(outputText)
-	outputText.SetScrollable(true).SetTitle("CONSOLE").SetBorder(true)
-
-	previewFlexBox.AddItem(previewTable, 0, 3, false)
-	previewFlexBox.AddItem(previewText, 0, 3, false)
-	previewFlexBox.AddItem(outputText, 0, 1, false)
+	preview = NewPreview()
 
 	mainFlexBox := tview.NewFlex().SetDirection(tview.FlexColumn).
 		AddItem(keyFlexBox, 0, 1, true).
-		AddItem(previewFlexBox, 0, 4, false)
+		AddItem(preview.flexBox, 0, 4, false)
 
 	pages.AddPage("main", mainFlexBox, true, true)
 
