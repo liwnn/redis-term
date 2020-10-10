@@ -83,10 +83,11 @@ func (t *DBTree) OnSelected(node *tview.TreeNode) {
 				}
 				if dataNode.CanExpand() {
 					r.Name = "dir"
+					t.AddNode(node, "▶ "+dataNode.name, r)
 				} else {
 					r.Name = "key"
+					t.AddNode(node, dataNode.name, r)
 				}
-				t.AddNode(node, dataNode.name, r)
 			}
 		case "dir":
 			Log("OnSelected: %v %v", typ.Name, typ.Index)
@@ -106,6 +107,13 @@ func (t *DBTree) OnSelected(node *tview.TreeNode) {
 		}
 	} else {
 		node.SetExpanded(!node.IsExpanded())
+	}
+	if typ.Data != nil && typ.Data.CanExpand() {
+		if node.IsExpanded() {
+			node.SetText("▼ " + typ.Data.name)
+		} else {
+			node.SetText("▶ " + typ.Data.name)
+		}
 	}
 }
 

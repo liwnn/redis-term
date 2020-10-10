@@ -28,8 +28,8 @@ type Preview struct {
 
 // NewPreview new
 func NewPreview() *Preview {
-	prevBtn := tview.NewButton("<-")
-	nextBtn := tview.NewButton("->")
+	prevBtn := tview.NewButton("◀")
+	nextBtn := tview.NewButton("▶")
 	grid := tview.NewGrid().
 		SetRows(-1).
 		SetColumns(-5, 5, 5, -1).
