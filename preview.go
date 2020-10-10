@@ -7,6 +7,10 @@ import (
 	"github.com/rivo/tview"
 )
 
+type page struct {
+	data interface{}
+}
+
 // Preview preview
 type Preview struct {
 	flexBox *tview.Flex
@@ -16,15 +20,15 @@ type Preview struct {
 	table    *tview.Table
 
 	output *tview.TextView
+
+	pages     []page
+	pageDelta int
+	curPage   int
 }
 
 // NewPreview new
 func NewPreview() *Preview {
 	prevBtn := tview.NewButton("<-")
-	prevBtn.SetBlurFunc(func(key tcell.Key) {
-	})
-	prevBtn.SetSelectedFunc(func() {
-	})
 	nextBtn := tview.NewButton("->")
 	grid := tview.NewGrid().
 		SetRows(-1).
@@ -67,17 +71,77 @@ func NewPreview() *Preview {
 		SetEvaluateAllRows(true)
 
 	p := &Preview{
-		flexBox:  previewFlexBox,
-		textView: previewText,
-		table:    previewTable,
-		output:   outputText,
-		showFlex: showFlex,
+		flexBox:   previewFlexBox,
+		textView:  previewText,
+		table:     previewTable,
+		output:    outputText,
+		showFlex:  showFlex,
+		pageDelta: 1000,
 	}
+	prevBtn.SetSelectedFunc(p.prevPage)
+	nextBtn.SetSelectedFunc(p.nextPage)
 	return p
 }
 
 // SetContent set
 func (p *Preview) SetContent(o interface{}) {
+	p.pages = p.pages[:0]
+	switch o.(type) {
+	case string:
+		p.pages = append(p.pages, page{
+			data: o,
+		})
+	case []KVText:
+		h := o.([]KVText)
+		pageCount := len(h) / p.pageDelta
+		if len(h)%p.pageDelta > 0 {
+			pageCount++
+		}
+		for i := 0; i < pageCount-1; i++ {
+			p.pages = append(p.pages, page{
+				data: h[i*p.pageDelta : (i+1)*p.pageDelta],
+			})
+		}
+		p.pages = append(p.pages, page{
+			data: h[(pageCount-1)*p.pageDelta:],
+		})
+	case []string:
+		h := o.([]string)
+		pageCount := len(h) / p.pageDelta
+		if len(h)%p.pageDelta > 0 {
+			pageCount++
+		}
+		for i := 0; i < (pageCount - 1); i++ {
+			p.pages = append(p.pages, page{
+				data: h[i*p.pageDelta : (i+1)*p.pageDelta],
+			})
+		}
+		p.pages = append(p.pages, page{
+			data: h[(pageCount-1)*p.pageDelta:],
+		})
+	}
+	p.Update(0)
+}
+
+func (p *Preview) nextPage() {
+	if p.curPage+1 >= len(p.pages) {
+		return
+	}
+	p.Update(p.curPage + 1)
+}
+
+func (p *Preview) prevPage() {
+	if p.curPage == 0 {
+		return
+	}
+	p.Update(p.curPage - 1)
+}
+
+// Update set
+func (p *Preview) Update(pageNum int) {
+	p.curPage = pageNum
+	page := p.pages[p.curPage]
+	o := page.data
 	switch o.(type) {
 	case string:
 		p.showFlex.Clear()
@@ -95,13 +159,14 @@ func (p *Preview) SetContent(o interface{}) {
 		p.table.ScrollToBeginning()
 
 		for i, kv := range h {
-			p.table.SetCell(i+1, 0, tview.NewTableCell(strconv.Itoa(i+1)))
+			index := p.curPage*p.pageDelta + i + 1
+			p.table.SetCell(i+1, 0, tview.NewTableCell(strconv.Itoa(index)))
 			p.table.SetCell(i+1, 1, tview.NewTableCell(kv.Key))
 			p.table.SetCell(i+1, 2, tview.NewTableCell(kv.Value))
 		}
 	case []string:
-		p.flexBox.Clear()
-		p.flexBox.AddItem(p.table, 0, 1, false)
+		p.showFlex.Clear()
+		p.showFlex.AddItem(p.table, 0, 1, false)
 		h := o.([]string)
 		p.table.Clear()
 		p.table.SetCell(0, 0, tview.NewTableCell("row").SetExpansion(1).SetSelectable(false).SetTextColor(tcell.ColorYellow))
@@ -110,7 +175,8 @@ func (p *Preview) SetContent(o interface{}) {
 		p.table.ScrollToBeginning()
 
 		for i, v := range h {
-			p.table.SetCell(i+1, 0, tview.NewTableCell(strconv.Itoa(i+1)))
+			index := p.curPage*p.pageDelta + i + 1
+			p.table.SetCell(i+1, 0, tview.NewTableCell(strconv.Itoa(index)))
 			p.table.SetCell(i+1, 1, tview.NewTableCell(v))
 		}
 	}
