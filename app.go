@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/gdamore/tcell"
+	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
 
@@ -99,10 +99,11 @@ func (t *DBTree) OnSelected(node *tview.TreeNode) {
 				}
 				if dataNode.CanExpand() {
 					r.Name = "dir"
+					t.AddNode(node, "▶ "+dataNode.name, r)
 				} else {
 					r.Name = "key"
+					t.AddNode(node, dataNode.name, r)
 				}
-				t.AddNode(node, dataNode.name, r)
 			}
 		}
 	} else {
@@ -132,7 +133,7 @@ func (t *DBTree) OnChanged(node *tview.TreeNode) {
 		o := t.data.GetValue(typ.Index, typ.Data.key)
 		preview.SetContent(o)
 	} else {
-		preview.SetContent("")
+		preview.Clear()
 	}
 }
 

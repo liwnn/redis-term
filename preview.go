@@ -1,9 +1,10 @@
 package redisterm
 
 import (
+	"fmt"
 	"strconv"
 
-	"github.com/gdamore/tcell"
+	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
 
@@ -18,6 +19,7 @@ type Preview struct {
 	showFlex *tview.Flex
 	textView *tview.TextView
 	table    *tview.Table
+	sizeText *tview.TextView
 
 	output *tview.TextView
 
@@ -28,16 +30,18 @@ type Preview struct {
 
 // NewPreview new
 func NewPreview() *Preview {
+	sizeText := tview.NewTextView()
 	prevBtn := tview.NewButton("◀")
 	nextBtn := tview.NewButton("▶")
 	grid := tview.NewGrid().
 		SetRows(-1).
-		SetColumns(-5, 5, 5, -1).
+		SetColumns(15, -5, 5, 5, -1).
 		SetBorders(false).
 		SetGap(0, 2).
 		SetMinSize(5, 5)
-	grid.AddItem(prevBtn, 0, 1, 1, 1, 0, 0, false) // 0行1列,占用1行1列(2则向后占一列)
-	grid.AddItem(nextBtn, 0, 2, 1, 1, 0, 0, false)
+	grid.AddItem(sizeText, 0, 0, 1, 1, 0, 0, false)
+	grid.AddItem(prevBtn, 0, 2, 1, 1, 0, 0, false) // 0行1列,占用1行1列(2则向后占一列)
+	grid.AddItem(nextBtn, 0, 3, 1, 1, 0, 0, false)
 
 	showFlex := tview.NewFlex()
 	showFlex.
@@ -63,11 +67,12 @@ func NewPreview() *Preview {
 		SetRegions(true)
 
 	previewTable := tview.NewTable()
+	style := tcell.Style{}
 	previewTable.SetBorders(false).
 		SetSelectable(true, false).
 		SetSeparator(' ').
 		SetFixed(1, 1).
-		SetSelectedStyle(tcell.ColorWhite, tcell.ColorBlue, tcell.AttrBold).
+		SetSelectedStyle(style.Foreground(tcell.ColorWhite).Background(tcell.ColorBlue).Attributes(tcell.AttrBold)).
 		SetEvaluateAllRows(true)
 
 	p := &Preview{
@@ -77,6 +82,7 @@ func NewPreview() *Preview {
 		output:    outputText,
 		showFlex:  showFlex,
 		pageDelta: 1000,
+		sizeText:  sizeText,
 	}
 	prevBtn.SetSelectedFunc(p.prevPage)
 	nextBtn.SetSelectedFunc(p.nextPage)
@@ -85,12 +91,15 @@ func NewPreview() *Preview {
 
 // SetContent set
 func (p *Preview) SetContent(o interface{}) {
+	p.setSizeText("")
 	p.pages = p.pages[:0]
 	switch o.(type) {
 	case string:
 		p.pages = append(p.pages, page{
 			data: o,
 		})
+		text := o.(string)
+		p.setSizeText(fmt.Sprintf("Size: %d bytes", len(text)))
 	case []KVText:
 		h := o.([]KVText)
 		pageCount := len(h) / p.pageDelta
@@ -121,6 +130,20 @@ func (p *Preview) SetContent(o interface{}) {
 		})
 	}
 	p.Update(0)
+}
+
+// Clear the preview.
+func (p *Preview) Clear() {
+	p.pages = p.pages[:0]
+	p.pages = append(p.pages, page{
+		data: "",
+	})
+	p.setSizeText("")
+	p.Update(0)
+}
+
+func (p *Preview) setSizeText(text string) {
+	p.sizeText.SetText(text)
 }
 
 func (p *Preview) nextPage() {
