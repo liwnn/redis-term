@@ -31,17 +31,19 @@ type Preview struct {
 // NewPreview new
 func NewPreview() *Preview {
 	sizeText := tview.NewTextView()
+	delBtn := tview.NewButton("Delete")
 	prevBtn := tview.NewButton("◀")
 	nextBtn := tview.NewButton("▶")
 	grid := tview.NewGrid().
 		SetRows(-1).
-		SetColumns(15, -5, 5, 5, -1).
+		SetColumns(20, -5, 10, 5, 5, -1).
 		SetBorders(false).
 		SetGap(0, 2).
 		SetMinSize(5, 5)
 	grid.AddItem(sizeText, 0, 0, 1, 1, 0, 0, false)
-	grid.AddItem(prevBtn, 0, 2, 1, 1, 0, 0, false) // 0行1列,占用1行1列(2则向后占一列)
-	grid.AddItem(nextBtn, 0, 3, 1, 1, 0, 0, false)
+	grid.AddItem(delBtn, 0, 2, 1, 1, 0, 0, false)
+	grid.AddItem(prevBtn, 0, 3, 1, 1, 0, 0, false) // 0行1列,占用1行1列(2则向后占一列)
+	grid.AddItem(nextBtn, 0, 4, 1, 1, 0, 0, false)
 
 	showFlex := tview.NewFlex()
 	showFlex.
