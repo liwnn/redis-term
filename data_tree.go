@@ -7,9 +7,10 @@ import (
 
 // DataNode node
 type DataNode struct {
-	name  string
-	key   string
-	child []*DataNode
+	name    string
+	key     string
+	child   []*DataNode
+	removed bool
 }
 
 // CanExpand 是否可展开

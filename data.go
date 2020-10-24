@@ -77,3 +77,9 @@ func (d *Data) GetValue(index int, key string) interface{} {
 		return fmt.Sprintf("%v not implement!!!", val)
 	}
 }
+
+// Delete node
+func (d *Data) Delete(node *DataNode) {
+	d.redis.Del(node.key)
+	node.removed = true
+}

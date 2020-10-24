@@ -8,6 +8,12 @@ import (
 	"redisterm/redis"
 )
 
+// KVText kv
+type KVText struct {
+	Key   string
+	Value string
+}
+
 // Redis client
 type Redis struct {
 	client *redis.Client
@@ -91,12 +97,6 @@ func (r *Redis) GetByte(key string) []byte {
 	return result.Byte()
 }
 
-// KVText kv
-type KVText struct {
-	Key   string
-	Value string
-}
-
 // GetKV hash
 func (r *Redis) GetKV(key string) []KVText {
 	result, err := r.client.Do("HGETAll", key)
@@ -146,4 +146,14 @@ func (r *Redis) Select(index int) {
 	r.index = index
 
 	Log("Redis: select %v", index)
+}
+
+// Del delete a key.
+func (r *Redis) Del(key string) {
+	result, err := r.client.Do("DEL", key)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	Log("Redis: DEL %v %v", key, result)
 }

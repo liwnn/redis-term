@@ -20,6 +20,7 @@ type Preview struct {
 	textView *tview.TextView
 	table    *tview.Table
 	sizeText *tview.TextView
+	delBtn   *tview.Button
 
 	output *tview.TextView
 
@@ -85,6 +86,7 @@ func NewPreview() *Preview {
 		showFlex:  showFlex,
 		pageDelta: 1000,
 		sizeText:  sizeText,
+		delBtn:    delBtn,
 	}
 	prevBtn.SetSelectedFunc(p.prevPage)
 	nextBtn.SetSelectedFunc(p.nextPage)
@@ -92,7 +94,7 @@ func NewPreview() *Preview {
 }
 
 // SetContent set
-func (p *Preview) SetContent(o interface{}) {
+func (p *Preview) SetContent(o interface{}, valid bool) {
 	p.setSizeText("")
 	p.pages = p.pages[:0]
 	switch o.(type) {
@@ -101,7 +103,9 @@ func (p *Preview) SetContent(o interface{}) {
 			data: o,
 		})
 		text := o.(string)
-		p.setSizeText(fmt.Sprintf("Size: %d bytes", len(text)))
+		if valid {
+			p.setSizeText(fmt.Sprintf("Size: %d bytes", len(text)))
+		}
 	case []KVText:
 		h := o.([]KVText)
 		pageCount := len(h) / p.pageDelta
@@ -134,18 +138,13 @@ func (p *Preview) SetContent(o interface{}) {
 	p.Update(0)
 }
 
-// Clear the preview.
-func (p *Preview) Clear() {
-	p.pages = p.pages[:0]
-	p.pages = append(p.pages, page{
-		data: "",
-	})
-	p.setSizeText("")
-	p.Update(0)
-}
-
 func (p *Preview) setSizeText(text string) {
 	p.sizeText.SetText(text)
+}
+
+// SetDeleteFunc 设置删除回调
+func (p *Preview) SetDeleteFunc(f func()) {
+	p.delBtn.SetSelectedFunc(f)
 }
 
 func (p *Preview) nextPage() {

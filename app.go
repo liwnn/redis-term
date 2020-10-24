@@ -23,6 +23,8 @@ type Reference struct {
 type DBTree struct {
 	tree *tview.TreeView
 	data *Data
+
+	selected *tview.TreeNode
 }
 
 // NewDBTree new
@@ -120,6 +122,7 @@ func (t *DBTree) OnSelected(node *tview.TreeNode) {
 
 // OnChanged on change
 func (t *DBTree) OnChanged(node *tview.TreeNode) {
+	t.selected = node
 	reference := node.GetReference()
 	if reference == nil {
 		return
@@ -129,11 +132,37 @@ func (t *DBTree) OnChanged(node *tview.TreeNode) {
 		log.Fatalf("reference \n")
 	}
 	if typ.Name == "key" {
-		Log("OnChanged: %v - %v", typ.Name, typ.Data.key)
-		o := t.data.GetValue(typ.Index, typ.Data.key)
-		preview.SetContent(o)
+		if !typ.Data.removed {
+			Log("OnChanged: %v - %v", typ.Name, typ.Data.key)
+			o := t.data.GetValue(typ.Index, typ.Data.key)
+			preview.SetContent(o, true)
+		} else {
+			preview.SetContent(fmt.Sprintf("%v was removed", typ.Data.key), false)
+		}
 	} else {
-		preview.Clear()
+		preview.SetContent("", false)
+	}
+}
+
+func (t *DBTree) deleteSelectKey() {
+	if t.selected == nil {
+		return
+	}
+
+	reference := t.selected.GetReference()
+	if reference == nil {
+		return
+	}
+	typ, ok := reference.(*Reference)
+	if !ok {
+		log.Fatalf("reference \n")
+	}
+	if typ.Name == "key" {
+		Log("delete %v", typ.Data.key)
+		t.data.Delete(typ.Data)
+		t.selected.SetText(typ.Data.key + " (Removed)")
+		t.selected.SetColor(tcell.ColorGray)
+		preview.SetContent(fmt.Sprintf("%v was removed", typ.Data.key), false)
 	}
 }
 
@@ -153,6 +182,7 @@ func Run(host string, port int) {
 
 	preview = NewPreview()
 	SetLogger(preview.output)
+	preview.SetDeleteFunc(tree.deleteSelectKey)
 
 	mainFlexBox := tview.NewFlex().SetDirection(tview.FlexColumn).
 		AddItem(keyFlexBox, 0, 1, true).
