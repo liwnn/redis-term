@@ -166,6 +166,9 @@ func (t *DBTree) deleteSelectKey() {
 	}
 }
 
+func (t *DBTree) reloadSelectKey() {
+}
+
 // Run run
 func Run(host string, port int) {
 	client := NewRedis(fmt.Sprintf("%v:%v", host, port))
@@ -183,6 +186,7 @@ func Run(host string, port int) {
 	preview = NewPreview()
 	SetLogger(preview.output)
 	preview.SetDeleteFunc(tree.deleteSelectKey)
+	preview.SetReloadFunc(tree.reloadSelectKey)
 
 	mainFlexBox := tview.NewFlex().SetDirection(tview.FlexColumn).
 		AddItem(keyFlexBox, 0, 1, true).
