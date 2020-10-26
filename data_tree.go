@@ -64,9 +64,10 @@ func (t *DataTree) addNode(p *DataNode, name, key string) {
 	} else {
 		n = t.getNodeByName(p, name[:index])
 		if n == nil {
+			index1 := strings.Index(key, name)
 			n = &DataNode{
 				name: name[:index],
-				key:  key,
+				key:  key[:index1+index+1],
 			}
 			p.child = append(p.child, n)
 		}
