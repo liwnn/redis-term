@@ -150,18 +150,26 @@ func (t *DBTree) OnChanged(node *tview.TreeNode) {
 	}
 }
 
-func (t *DBTree) deleteSelectKey() {
-	if t.selected == nil {
-		return
+func (t *DBTree) getReference(node *tview.TreeNode) *Reference {
+	if node == nil {
+		return nil
 	}
 
-	reference := t.selected.GetReference()
+	reference := node.GetReference()
 	if reference == nil {
-		return
+		return nil
 	}
 	typ, ok := reference.(*Reference)
 	if !ok {
 		log.Fatalf("reference \n")
+	}
+	return typ
+}
+
+func (t *DBTree) deleteSelectKey() {
+	typ := t.getReference(t.selected)
+	if typ == nil {
+		return
 	}
 	switch typ.Name {
 	case "key":
@@ -191,6 +199,11 @@ func (t *DBTree) deleteSelectKey() {
 }
 
 func (t *DBTree) reloadSelectKey() {
+	reference := t.getReference(t.selected)
+	if reference == nil {
+		return
+	}
+	Log("reload %v", reference.Data.key)
 }
 
 // Run run
