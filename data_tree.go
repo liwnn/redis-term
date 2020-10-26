@@ -18,6 +18,16 @@ func (n *DataNode) CanExpand() bool {
 	return len(n.child) != 0
 }
 
+// ClearChildren remove all children
+func (n *DataNode) ClearChildren() {
+	n.child = n.child[:0]
+}
+
+// GetChildren return childers.
+func (n *DataNode) GetChildren() []*DataNode {
+	return n.child
+}
+
 // DataTree 数据
 type DataTree struct {
 	root *DataNode

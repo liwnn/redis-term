@@ -83,3 +83,9 @@ func (d *Data) Delete(node *DataNode) {
 	d.redis.Del(node.key)
 	node.removed = true
 }
+
+// FlushDB remove all keys from current database.
+func (d *Data) FlushDB(node *DataNode) {
+	d.redis.FlushDB()
+	node.ClearChildren()
+}

@@ -90,6 +90,7 @@ func NewPreview() *Preview {
 		pageDelta: 1000,
 		sizeText:  sizeText,
 		delBtn:    delBtn,
+		reloadBtn: reloadBtn,
 	}
 	prevBtn.SetSelectedFunc(p.prevPage)
 	nextBtn.SetSelectedFunc(p.nextPage)
@@ -148,6 +149,11 @@ func (p *Preview) setSizeText(text string) {
 // SetDeleteFunc 设置删除回调
 func (p *Preview) SetDeleteFunc(f func()) {
 	p.delBtn.SetSelectedFunc(f)
+}
+
+// SetDeleteText set delete button text
+func (p *Preview) SetDeleteText(text string) {
+	p.delBtn.SetLabel(text)
 }
 
 // SetReloadFunc set reload function

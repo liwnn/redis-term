@@ -157,3 +157,13 @@ func (r *Redis) Del(key string) {
 
 	Log("Redis: DEL %v %v", key, result)
 }
+
+// FlushDB remove all keys from current database.
+func (r *Redis) FlushDB() {
+	result, err := r.client.Do("FLUSHDB")
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	Log("Redis: FLUSHDB index[%v] -  %v", r.index, result)
+}

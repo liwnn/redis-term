@@ -139,7 +139,13 @@ func (t *DBTree) OnChanged(node *tview.TreeNode) {
 		} else {
 			preview.SetContent(fmt.Sprintf("%v was removed", typ.Data.key), false)
 		}
+		preview.SetDeleteText("Delete")
 	} else {
+		if typ.Name == "index" {
+			preview.SetDeleteText("Flush")
+		} else {
+			preview.SetDeleteText("Delete")
+		}
 		preview.SetContent("", false)
 	}
 }
@@ -157,12 +163,30 @@ func (t *DBTree) deleteSelectKey() {
 	if !ok {
 		log.Fatalf("reference \n")
 	}
-	if typ.Name == "key" {
+	switch typ.Name {
+	case "key":
 		Log("delete %v", typ.Data.key)
 		t.data.Delete(typ.Data)
 		t.selected.SetText(typ.Data.key + " (Removed)")
 		t.selected.SetColor(tcell.ColorGray)
 		preview.SetContent(fmt.Sprintf("%v was removed", typ.Data.key), false)
+	case "index":
+		t.data.FlushDB(typ.Data)
+		t.selected.ClearChildren()
+		t.selected.SetText(typ.Data.name)
+	case "dir":
+		var delKey = make([]string, 0, len(typ.Data.GetChildren()))
+		for _, v := range typ.Data.GetChildren() {
+			t.data.Delete(v)
+			delKey = append(delKey, v.key)
+		}
+		Log("delete %v", delKey)
+		t.selected.SetText(typ.Data.name + " (Removed)")
+		t.selected.SetColor(tcell.ColorGray)
+		t.selected.ClearChildren()
+		preview.SetContent("", false)
+	default:
+		Log("delete %v not implement", typ.Name)
 	}
 }
 
