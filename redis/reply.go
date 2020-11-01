@@ -17,6 +17,11 @@ func NewResult(object *Object) *Result {
 	}
 }
 
+// IsNil return if object is nil
+func (r *Result) IsNil() bool {
+	return r.object.Type == Nil
+}
+
 // List returns a string slice.
 func (r *Result) List() ([]string, error) {
 	if r.object.Type == Err {

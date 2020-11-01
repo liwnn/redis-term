@@ -1,6 +1,7 @@
 package redisterm
 
 import (
+	"errors"
 	"log"
 	"net"
 	"strconv"
@@ -95,6 +96,10 @@ func (r *Redis) GetByte(key string) ([]byte, error) {
 	}
 
 	Log("Redis: get %v", key)
+	if result.IsNil() {
+		return nil, errors.New("nil")
+	}
+
 	return result.Byte(), nil
 }
 

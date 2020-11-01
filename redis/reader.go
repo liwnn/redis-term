@@ -74,8 +74,7 @@ func (r *RESPReader) ReadObject() (*Object, error) {
 	case INTEGER: // :99\r\n  -ERR unknown command 'GETT'\r\n
 		return NewObject(Int, line[1:len(line)-2]), nil
 	case BULK_STRING: // $13\r\nHello, World!\r\n
-		b, err := r.readBulkString(line[:len(line)-2])
-		return NewObject(BulkStr, b), err
+		return r.readBulkString(line[:len(line)-2])
 	case ARRAY: // *3\r\n$3\r\nSET\r\n$5\r\nmykey\r\n$8\r\nmy value\r\n
 		return r.readArray(line[:len(line)-2])
 	default:
@@ -83,14 +82,14 @@ func (r *RESPReader) ReadObject() (*Object, error) {
 	}
 }
 
-func (r *RESPReader) readBulkString(line []byte) ([]byte, error) {
+func (r *RESPReader) readBulkString(line []byte) (*Object, error) {
 	count, err := r.getCount(line)
 	if err != nil {
 		return nil, err
 	}
 
 	if count == -1 {
-		return line, nil
+		return NewObject(Nil, line), nil
 	}
 
 	buff := make([]byte, count+2)
@@ -100,7 +99,7 @@ func (r *RESPReader) readBulkString(line []byte) ([]byte, error) {
 	}
 
 	buff = buff[:count]
-	return buff, nil
+	return NewObject(BulkStr, buff), nil
 }
 
 func (r *RESPReader) getCount(line []byte) (int, error) {

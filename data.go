@@ -76,6 +76,8 @@ func (d *Data) GetValue(index int, key string) interface{} {
 		return d.redis.GetKV(key)
 	case "set":
 		return d.redis.GetSet(key)
+	case "none":
+		return nil
 	default:
 		return fmt.Sprintf("%v not implement!!!", val)
 	}

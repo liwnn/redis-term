@@ -209,6 +209,7 @@ func (t *DBTree) reloadSelectKey() {
 		o := t.data.GetValue(reference.Index, reference.Data.key)
 		if o == nil {
 			reference.Data.removed = true
+			t.selected.SetText(reference.Data.name + " (Removed)")
 			preview.SetContent(fmt.Sprintf("%v was removed", reference.Data.key), false)
 			preview.SetDeleteText("Delete")
 		} else {
