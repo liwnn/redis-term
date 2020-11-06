@@ -10,6 +10,7 @@ type DataNode struct {
 	name    string
 	key     string
 	child   []*DataNode
+	p       *DataNode
 	removed bool
 }
 
@@ -26,6 +27,25 @@ func (n *DataNode) ClearChildren() {
 // GetChildren return childers.
 func (n *DataNode) GetChildren() []*DataNode {
 	return n.child
+}
+
+// RemoveChild remove child
+func (n *DataNode) RemoveChild(child *DataNode) *DataNode {
+	for i, v := range n.child {
+		if v == child {
+			n.child = append(n.child[:i], n.child[i+1:]...)
+			return child
+		}
+	}
+	return nil
+}
+
+// RemoveSelf remove self.
+func (n *DataNode) RemoveSelf() {
+	n.p.RemoveChild(n)
+	if len(n.p.child) == 0 {
+		n.p.RemoveSelf()
+	}
 }
 
 // DataTree 数据
@@ -58,6 +78,7 @@ func (t *DataTree) addNode(p *DataNode, name, key string) {
 			n = &DataNode{
 				name: key,
 				key:  key,
+				p:    p,
 			}
 			p.child = append(p.child, n)
 		}
@@ -68,6 +89,7 @@ func (t *DataTree) addNode(p *DataNode, name, key string) {
 			n = &DataNode{
 				name: name[:index],
 				key:  key[:index1+index+1],
+				p:    p,
 			}
 			p.child = append(p.child, n)
 		}

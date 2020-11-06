@@ -64,9 +64,12 @@ func (d *Data) GetValue(index int, key string) interface{} {
 	val := d.redis.Type(key)
 	switch val {
 	case "string":
-		b := d.redis.GetByte(key)
+		b, err := d.redis.GetByte(key)
+		if err != nil {
+			return nil
+		}
 		if isText(b) {
-			return (string(b))
+			return string(b)
 		}
 		return encodeToHexString(b)
 	case "hash":
@@ -88,4 +91,19 @@ func (d *Data) Delete(node *DataNode) {
 func (d *Data) FlushDB(node *DataNode) {
 	d.redis.FlushDB()
 	node.ClearChildren()
+}
+
+// Reload reload.
+func (d *Data) Reload(node *DataNode) {
+	node.ClearChildren()
+	keys := d.redis.Keys(node.key + "*")
+	if len(keys) == 0 {
+		node.RemoveSelf()
+		node.removed = true
+	} else {
+		for _, k := range keys {
+			Log("%v %v %v", k[len(node.key):], k, node.key)
+			d.db[d.redis.index].addNode(node, k[len(node.key):], k)
+		}
+	}
 }

@@ -204,6 +204,42 @@ func (t *DBTree) reloadSelectKey() {
 		return
 	}
 	Log("reload %v", reference.Data.key)
+
+	if reference.Name == "key" {
+		o := t.data.GetValue(reference.Index, reference.Data.key)
+		if o == nil {
+			reference.Data.removed = true
+			preview.SetContent(fmt.Sprintf("%v was removed", reference.Data.key), false)
+			preview.SetDeleteText("Delete")
+		} else {
+			preview.SetContent(o, true)
+		}
+		return
+	}
+
+	t.selected.ClearChildren()
+	t.data.Reload(reference.Data)
+
+	node := t.selected
+	childen := reference.Data.GetChildren()
+	for _, dataNode := range childen {
+		r := &Reference{
+			Index: reference.Index,
+			Data:  dataNode,
+		}
+		if dataNode.CanExpand() {
+			r.Name = "dir"
+			t.AddNode(node, "▶ "+dataNode.name, r)
+		} else {
+			r.Name = "key"
+			t.AddNode(node, dataNode.name, r)
+		}
+	}
+
+	if reference.Data.removed {
+		t.selected.SetText(reference.Data.name + " (Removed)")
+		t.selected.SetColor(tcell.ColorGray)
+	}
 }
 
 // Run run

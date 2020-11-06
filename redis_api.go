@@ -62,6 +62,7 @@ func (r *Redis) Keys(pattern string) []string {
 	if err != nil {
 		return nil
 	}
+	Log("Redis: keys %v", pattern)
 	return d
 }
 
@@ -87,14 +88,14 @@ func (r *Redis) Get(key string) string {
 }
 
 // GetByte get
-func (r *Redis) GetByte(key string) []byte {
+func (r *Redis) GetByte(key string) ([]byte, error) {
 	result, err := r.client.Do("GET", key)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 
 	Log("Redis: get %v", key)
-	return result.Byte()
+	return result.Byte(), nil
 }
 
 // GetKV hash
