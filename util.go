@@ -24,5 +24,5 @@ func isText(b []byte) bool {
 			count++
 		}
 	}
-	return count/30 >= len(b)/100
+	return count*100 >= len(b)*30
 }
