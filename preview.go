@@ -80,7 +80,6 @@ func NewPreview() *Preview {
 		SetFixed(1, 1).
 		SetSelectedStyle(style.Foreground(tcell.ColorWhite).Background(tcell.ColorBlue).Attributes(tcell.AttrBold)).
 		SetEvaluateAllRows(true)
-
 	p := &Preview{
 		flexBox:   previewFlexBox,
 		textView:  previewText,
@@ -94,7 +93,34 @@ func NewPreview() *Preview {
 	}
 	prevBtn.SetSelectedFunc(p.prevPage)
 	nextBtn.SetSelectedFunc(p.nextPage)
+	p.init()
 	return p
+}
+
+func (p *Preview) init() {
+	p.table.SetSelectionChangedFunc(func(row, column int) {
+		Log("Preview Update List sel row[%v] colujn[%v]", row, column)
+		if row <= 0 {
+			return
+		}
+		page := p.pages[p.curPage]
+		var size int
+		switch page.data.(type) {
+		case []KVText:
+			h := page.data.([]KVText)
+			if row-1 >= len(h) {
+				return
+			}
+			size = len(h[row-1].Value)
+		case []string:
+			h := page.data.([]string)
+			if row-1 >= len(h) {
+				return
+			}
+			size = len(h[row-1])
+		}
+		p.setSizeText(fmt.Sprintf("Size: %d bytes", size))
+	})
 }
 
 // SetContent set
@@ -189,11 +215,6 @@ func (p *Preview) Update(pageNum int) {
 		p.showFlex.Clear()
 		p.showFlex.AddItem(p.table, 0, 1, false)
 		h := o.([]KVText)
-		p.table.SetSelectedFunc(func(row, column int) {
-			page := p.pages[p.curPage]
-			h := page.data.([]KVText)
-			p.setSizeText(fmt.Sprintf("Size: %d bytes", len(h[row].Value)))
-		})
 		p.table.Clear()
 		p.table.SetCell(0, 0, tview.NewTableCell("row").SetExpansion(1).SetSelectable(false).SetTextColor(tcell.ColorYellow))
 		p.table.SetCell(0, 1, tview.NewTableCell("key").SetExpansion(3).SetSelectable(false).SetTextColor(tcell.ColorYellow))
@@ -211,11 +232,6 @@ func (p *Preview) Update(pageNum int) {
 		p.showFlex.Clear()
 		p.showFlex.AddItem(p.table, 0, 1, false)
 		h := o.([]string)
-		p.table.SetSelectedFunc(func(row, column int) {
-			page := p.pages[p.curPage]
-			h := page.data.([]string)
-			p.setSizeText(fmt.Sprintf("Size: %d bytes", len(h[row])))
-		})
 		p.table.Clear()
 		p.table.SetCell(0, 0, tview.NewTableCell("row").SetExpansion(1).SetSelectable(false).SetTextColor(tcell.ColorYellow))
 		p.table.SetCell(0, 1, tview.NewTableCell("value").SetExpansion(20).SetSelectable(false).SetTextColor(tcell.ColorYellow))
