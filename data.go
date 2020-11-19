@@ -108,7 +108,7 @@ func (d *Data) FlushDB(node *DataNode) {
 
 // Reload reload.
 func (d *Data) Reload(node *DataNode) {
-	Log("[Data] Reload key %v*", node.key)
+	Log("Data: Reload key %v*", node.key)
 	node.ClearChildren()
 	keys := d.redis.Keys(node.key + "*")
 	if len(keys) == 0 {
