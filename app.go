@@ -65,12 +65,13 @@ func (t *DBTree) OnSelected(node *tview.TreeNode) {
 	if !ok {
 		log.Fatalf("reference \n")
 	}
+	Log("OnSelected: %v %v", typ.Name, typ.Index)
+
 	t.data.Select(typ.Index)
 	childen := node.GetChildren()
 	if len(childen) == 0 {
 		switch typ.Name {
 		case "db":
-			Log("OnSelected: %v", typ.Name)
 			for i, dataNode := range t.data.GetDatabases() {
 				t.AddNode(node, dataNode.name, &Reference{
 					Name:  "index",
@@ -79,7 +80,6 @@ func (t *DBTree) OnSelected(node *tview.TreeNode) {
 				})
 			}
 		case "index":
-			Log("OnSelected: %v %v", typ.Name, typ.Index)
 			dataNodes := t.data.GetKeys()
 			for _, dataNode := range dataNodes {
 				r := &Reference{
@@ -95,7 +95,6 @@ func (t *DBTree) OnSelected(node *tview.TreeNode) {
 				}
 			}
 		case "dir":
-			Log("OnSelected: %v %v", typ.Name, typ.Index)
 			dataNodes := t.data.GetChildren(typ.Data)
 			for _, dataNode := range dataNodes {
 				r := &Reference{
@@ -134,9 +133,20 @@ func (t *DBTree) OnChanged(node *tview.TreeNode) {
 	if !ok {
 		log.Fatalf("reference \n")
 	}
+	if typ.Name == "db" {
+		Log("OnChanged: db %v", typ.Name)
+		preview.SetOpBtnVisible(false)
+	} else {
+		if typ.Name == "index" {
+			Log("OnChanged: %v - %v", typ.Name, typ.Index)
+		} else {
+			Log("OnChanged: %v - %v", typ.Name, typ.Data.key)
+		}
+		preview.SetOpBtnVisible(true)
+	}
+
 	if typ.Name == "key" {
 		if !typ.Data.removed {
-			Log("OnChanged: %v - %v", typ.Name, typ.Data.key)
 			t.data.Select(typ.Index)
 			o := t.data.GetValue(typ.Data.key)
 			preview.SetContent(o, true)

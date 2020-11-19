@@ -25,6 +25,8 @@ type Preview struct {
 	renameBtn *tview.Button
 	keyInput  *tview.InputField
 	grid      *tview.Grid
+	prevBtn   *tview.Button
+	nextBtn   *tview.Button
 
 	output *tview.TextView
 
@@ -58,10 +60,6 @@ func NewPreview() *Preview {
 		SetGap(0, 2).
 		SetMinSize(5, 5)
 	grid.AddItem(sizeText, 0, 0, 1, 1, 0, 0, false)
-	grid.AddItem(reloadBtn, 0, 1, 1, 1, 0, 0, false)
-	grid.AddItem(delBtn, 0, 2, 1, 1, 0, 0, false)
-	grid.AddItem(prevBtn, 0, 5, 1, 1, 0, 0, false) // 0行1列,占用1行1列(2则向后占一列)
-	grid.AddItem(nextBtn, 0, 6, 1, 1, 0, 0, false)
 
 	showFlex := tview.NewFlex()
 	showFlex.
@@ -107,6 +105,8 @@ func NewPreview() *Preview {
 		renameBtn: renameBtn,
 		keyInput:  keyInput,
 		grid:      grid,
+		nextBtn:   nextBtn,
+		prevBtn:   prevBtn,
 	}
 	prevBtn.SetSelectedFunc(p.prevPage)
 	nextBtn.SetSelectedFunc(p.nextPage)
@@ -183,10 +183,28 @@ func (p *Preview) SetContent(o interface{}, valid bool) {
 		})
 	}
 	p.Update(0)
+	if len(p.pages) > 1 {
+		p.grid.AddItem(p.nextBtn, 0, 6, 1, 1, 0, 0, false)
+		p.grid.AddItem(p.prevBtn, 0, 5, 1, 1, 0, 0, false) // 0行1列,占用1行1列(2则向后占一列)
+	} else {
+		p.grid.RemoveItem(p.nextBtn)
+		p.grid.RemoveItem(p.prevBtn)
+	}
 }
 
 func (p *Preview) setSizeText(text string) {
 	p.sizeText.SetText(text)
+}
+
+// SetOpBtnVisible show reload delete button
+func (p *Preview) SetOpBtnVisible(visible bool) {
+	if visible {
+		p.grid.AddItem(p.reloadBtn, 0, 1, 1, 1, 0, 0, false)
+		p.grid.AddItem(p.delBtn, 0, 2, 1, 1, 0, 0, false)
+	} else {
+		p.grid.RemoveItem(p.reloadBtn)
+		p.grid.RemoveItem(p.delBtn)
+	}
 }
 
 // SetDeleteFunc 设置删除回调
