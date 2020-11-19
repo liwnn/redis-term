@@ -108,6 +108,7 @@ func (d *Data) FlushDB(node *DataNode) {
 
 // Reload reload.
 func (d *Data) Reload(node *DataNode) {
+	Log("[Data] Reload key %v*", node.key)
 	node.ClearChildren()
 	keys := d.redis.Keys(node.key + "*")
 	if len(keys) == 0 {
@@ -115,7 +116,6 @@ func (d *Data) Reload(node *DataNode) {
 		node.removed = true
 	} else {
 		for _, k := range keys {
-			Log("%v %v %v", k[len(node.key):], k, node.key)
 			d.db[d.index].addNode(node, k[len(node.key):], k)
 		}
 	}
