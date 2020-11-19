@@ -15,14 +15,21 @@ func encodeToHexString(src []byte) string {
 }
 
 func isText(b []byte) bool {
+	// 空字符串按照文本格式处理
+	if len(b) == 0 {
+		return true
+	}
 	var count int
 	for _, v := range b {
-		if v == 0 { // '\0' 则不是文本
+		// 如果字符串含有空字符（‘\0’），则认为是二进制格式
+		if v == 0 {
 			return false
 		}
 		if v>>7 == 1 {
 			count++
 		}
 	}
-	return count*100 >= len(b)*30
+	// 超过30%的字符串高位时1（ascii大于126）或其它奇怪字符，则认为是二进制格式
+	isBin := count*100 >= len(b)*30
+	return !isBin
 }
