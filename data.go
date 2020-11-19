@@ -87,6 +87,9 @@ func (d *Data) GetValue(index int, key string) interface{} {
 func (d *Data) Delete(node *DataNode) {
 	d.redis.Del(node.key)
 	node.removed = true
+	for _, v := range node.GetChildren() {
+		d.Delete(v)
+	}
 }
 
 // FlushDB remove all keys from current database.
