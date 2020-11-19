@@ -189,6 +189,11 @@ func (p *Preview) Update(pageNum int) {
 		p.showFlex.Clear()
 		p.showFlex.AddItem(p.table, 0, 1, false)
 		h := o.([]KVText)
+		p.table.SetSelectedFunc(func(row, column int) {
+			page := p.pages[p.curPage]
+			h := page.data.([]KVText)
+			p.setSizeText(fmt.Sprintf("Size: %d bytes", len(h[row].Value)))
+		})
 		p.table.Clear()
 		p.table.SetCell(0, 0, tview.NewTableCell("row").SetExpansion(1).SetSelectable(false).SetTextColor(tcell.ColorYellow))
 		p.table.SetCell(0, 1, tview.NewTableCell("key").SetExpansion(3).SetSelectable(false).SetTextColor(tcell.ColorYellow))
@@ -206,6 +211,11 @@ func (p *Preview) Update(pageNum int) {
 		p.showFlex.Clear()
 		p.showFlex.AddItem(p.table, 0, 1, false)
 		h := o.([]string)
+		p.table.SetSelectedFunc(func(row, column int) {
+			page := p.pages[p.curPage]
+			h := page.data.([]string)
+			p.setSizeText(fmt.Sprintf("Size: %d bytes", len(h[row])))
+		})
 		p.table.Clear()
 		p.table.SetCell(0, 0, tview.NewTableCell("row").SetExpansion(1).SetSelectable(false).SetTextColor(tcell.ColorYellow))
 		p.table.SetCell(0, 1, tview.NewTableCell("value").SetExpansion(20).SetSelectable(false).SetTextColor(tcell.ColorYellow))
