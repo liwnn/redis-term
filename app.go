@@ -144,6 +144,7 @@ func (t *DBTree) OnChanged(node *tview.TreeNode) {
 			preview.SetContent(fmt.Sprintf("%v was removed", typ.Data.key), false)
 		}
 		preview.SetDeleteText("Delete")
+		preview.SetKey(typ.Data.key)
 	} else {
 		if typ.Name == "index" {
 			preview.SetDeleteText("Flush")
@@ -151,6 +152,7 @@ func (t *DBTree) OnChanged(node *tview.TreeNode) {
 			preview.SetDeleteText("Delete")
 		}
 		preview.SetContent("", false)
+		preview.SetKey("")
 	}
 }
 
@@ -191,6 +193,27 @@ func (t *DBTree) deleteSelectKey(typ *Reference) {
 	default:
 		Log("delete %v not implement", typ.Name)
 	}
+}
+
+func (t *DBTree) renameSelectKey() {
+	reference := t.getReference(t.selected)
+	if reference == nil {
+		return
+	}
+	if reference.Name != "key" {
+		return
+	}
+
+	notice := fmt.Sprintf("Rename %v->%v", reference.Data.key, preview.GetKey())
+	ShowModal(notice, func() {
+		if reference.Data.key == preview.GetKey() {
+			return
+		}
+
+		Log("rename %v %v", reference.Data.key, preview.GetKey())
+		t.data.Rename(reference.Data, preview.GetKey())
+		t.selected.SetText(reference.Data.key)
+	})
 }
 
 func (t *DBTree) reloadSelectKey() {
@@ -286,6 +309,7 @@ func Run(host string, port int) {
 		})
 	})
 	preview.SetReloadFunc(tree.reloadSelectKey)
+	preview.SetRenameFunc(tree.renameSelectKey)
 
 	mainFlexBox := tview.NewFlex().SetDirection(tview.FlexColumn).
 		AddItem(keyFlexBox, 0, 1, true).

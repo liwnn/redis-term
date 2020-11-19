@@ -2,6 +2,7 @@ package redisterm
 
 import (
 	"fmt"
+	"log"
 	"strconv"
 )
 
@@ -65,6 +66,15 @@ func (d *Data) Select(index int) {
 	}
 	d.redis.Select(index)
 	d.index = index
+}
+
+// Rename key -> newKey
+func (d *Data) Rename(node *DataNode, newKey string) {
+	err := d.redis.Rename(node.key, newKey)
+	if err != nil {
+		log.Fatal(err)
+	}
+	node.key = newKey
 }
 
 // GetValue value

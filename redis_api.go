@@ -148,6 +148,16 @@ func (r *Redis) Select(index int) {
 	Log("[Redis] select %v", index)
 }
 
+// Rename key -> newKey
+func (r *Redis) Rename(key, newKey string) error {
+	result, err := r.client.Do("RENAME", key, newKey)
+	if err != nil {
+		return err
+	}
+	Log("[Redis] rename %v -> %v, resp[%v]", key, newKey, result.String())
+	return nil
+}
+
 // Del delete a key.
 func (r *Redis) Del(key string) {
 	result, err := r.client.Do("DEL", key)

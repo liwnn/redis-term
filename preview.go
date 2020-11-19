@@ -22,6 +22,9 @@ type Preview struct {
 	sizeText  *tview.TextView
 	delBtn    *tview.Button
 	reloadBtn *tview.Button
+	renameBtn *tview.Button
+	keyInput  *tview.InputField
+	grid      *tview.Grid
 
 	output *tview.TextView
 
@@ -33,21 +36,32 @@ type Preview struct {
 // NewPreview new
 func NewPreview() *Preview {
 	sizeText := tview.NewTextView()
+	keyInput := tview.NewInputField()
+	keyInput.SetLabel("Key:").
+		SetLabelWidth(4).
+		SetLabelColor(tcell.ColorWhite).
+		SetFieldBackgroundColor(tcell.ColorDarkSlateGrey)
 	delBtn := tview.NewButton("Delete")
+	delBtn.SetBackgroundColor(tcell.ColorDarkSlateGrey)
 	reloadBtn := tview.NewButton("Reload")
+	reloadBtn.SetBackgroundColor(tcell.ColorDarkSlateGrey)
+	renameBtn := tview.NewButton("Rename")
+	renameBtn.SetBackgroundColor(tcell.ColorDarkSlateGrey)
 	prevBtn := tview.NewButton("◀")
+	prevBtn.SetBackgroundColor(tcell.ColorDarkSlateGrey)
 	nextBtn := tview.NewButton("▶")
+	nextBtn.SetBackgroundColor(tcell.ColorDarkSlateGrey)
 	grid := tview.NewGrid().
 		SetRows(-1).
-		SetColumns(20, 10, 10, 5, 5, -1).
+		SetColumns(20, 10, 10, 30, 10, 5, 5, -1).
 		SetBorders(false).
 		SetGap(0, 2).
 		SetMinSize(5, 5)
 	grid.AddItem(sizeText, 0, 0, 1, 1, 0, 0, false)
 	grid.AddItem(reloadBtn, 0, 1, 1, 1, 0, 0, false)
 	grid.AddItem(delBtn, 0, 2, 1, 1, 0, 0, false)
-	grid.AddItem(prevBtn, 0, 3, 1, 1, 0, 0, false) // 0行1列,占用1行1列(2则向后占一列)
-	grid.AddItem(nextBtn, 0, 4, 1, 1, 0, 0, false)
+	grid.AddItem(prevBtn, 0, 5, 1, 1, 0, 0, false) // 0行1列,占用1行1列(2则向后占一列)
+	grid.AddItem(nextBtn, 0, 6, 1, 1, 0, 0, false)
 
 	showFlex := tview.NewFlex()
 	showFlex.
@@ -90,6 +104,9 @@ func NewPreview() *Preview {
 		sizeText:  sizeText,
 		delBtn:    delBtn,
 		reloadBtn: reloadBtn,
+		renameBtn: renameBtn,
+		keyInput:  keyInput,
+		grid:      grid,
 	}
 	prevBtn.SetSelectedFunc(p.prevPage)
 	nextBtn.SetSelectedFunc(p.nextPage)
@@ -182,9 +199,31 @@ func (p *Preview) SetDeleteText(text string) {
 	p.delBtn.SetLabel(text)
 }
 
+// SetKey set key input text
+func (p *Preview) SetKey(text string) {
+	if len(text) > 0 {
+		p.grid.AddItem(p.keyInput, 0, 3, 1, 1, 0, 0, false)
+		p.grid.AddItem(p.renameBtn, 0, 4, 1, 1, 0, 0, false)
+		p.keyInput.SetText(text)
+	} else {
+		p.grid.RemoveItem(p.keyInput)
+		p.grid.RemoveItem(p.renameBtn)
+	}
+}
+
+// Getkey return key
+func (p *Preview) GetKey() string {
+	return p.keyInput.GetText()
+}
+
 // SetReloadFunc set reload function
 func (p *Preview) SetReloadFunc(f func()) {
 	p.reloadBtn.SetSelectedFunc(f)
+}
+
+// SetRenameFunc set rename function
+func (p *Preview) SetRenameFunc(f func()) {
+	p.renameBtn.SetSelectedFunc(f)
 }
 
 func (p *Preview) nextPage() {
