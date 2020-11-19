@@ -63,6 +63,7 @@ func (t *DBTree) OnSelected(node *tview.TreeNode) {
 	if !ok {
 		log.Fatalf("reference \n")
 	}
+	t.data.Select(typ.Index)
 	childen := node.GetChildren()
 	if len(childen) == 0 {
 		switch typ.Name {
@@ -77,7 +78,7 @@ func (t *DBTree) OnSelected(node *tview.TreeNode) {
 			}
 		case "index":
 			Log("OnSelected: %v %v", typ.Name, typ.Index)
-			dataNodes := t.data.GetKeys(typ.Index)
+			dataNodes := t.data.GetKeys()
 			for _, dataNode := range dataNodes {
 				r := &Reference{
 					Index: typ.Index,
@@ -134,7 +135,8 @@ func (t *DBTree) OnChanged(node *tview.TreeNode) {
 	if typ.Name == "key" {
 		if !typ.Data.removed {
 			Log("OnChanged: %v - %v", typ.Name, typ.Data.key)
-			o := t.data.GetValue(typ.Index, typ.Data.key)
+			t.data.Select(typ.Index)
+			o := t.data.GetValue(typ.Data.key)
 			preview.SetContent(o, true)
 		} else {
 			preview.SetContent(fmt.Sprintf("%v was removed", typ.Data.key), false)
@@ -183,12 +185,7 @@ func (t *DBTree) deleteSelectKey() {
 		t.selected.ClearChildren()
 		t.selected.SetText(typ.Data.name)
 	case "dir":
-		var delKey = make([]string, 0, len(typ.Data.GetChildren()))
-		for _, v := range typ.Data.GetChildren() {
-			t.data.Delete(v)
-			delKey = append(delKey, v.key)
-		}
-		Log("delete %v", delKey)
+		t.data.Delete(typ.Data)
 		t.selected.SetText(typ.Data.name + " (Removed)")
 		t.selected.SetColor(tcell.ColorGray)
 		t.selected.ClearChildren()
@@ -206,7 +203,8 @@ func (t *DBTree) reloadSelectKey() {
 	Log("reload %v", reference.Data.key)
 
 	if reference.Name == "key" {
-		o := t.data.GetValue(reference.Index, reference.Data.key)
+		t.data.Select(reference.Index)
+		o := t.data.GetValue(reference.Data.key)
 		if o == nil {
 			reference.Data.removed = true
 			t.selected.SetText(reference.Data.name + " (Removed)")

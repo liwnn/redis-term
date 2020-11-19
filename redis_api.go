@@ -18,7 +18,6 @@ type KVText struct {
 // Redis client
 type Redis struct {
 	client *redis.Client
-	index  int
 }
 
 // NewRedis new
@@ -139,9 +138,6 @@ func (r *Redis) GetSet(key string) []string {
 
 // Select select index
 func (r *Redis) Select(index int) {
-	if index == r.index {
-		return
-	}
 	result, err := r.client.Do("SELECT", strconv.Itoa(index))
 	if err != nil {
 		log.Fatalln(err)
@@ -149,8 +145,6 @@ func (r *Redis) Select(index int) {
 	if result.String() != "OK" {
 		log.Fatalln(result.String())
 	}
-	r.index = index
-
 	Log("Redis: select %v", index)
 }
 
@@ -171,5 +165,5 @@ func (r *Redis) FlushDB() {
 		log.Fatalln(err)
 	}
 
-	Log("Redis: FLUSHDB index[%v] -  %v", r.index, result)
+	Log("Redis: FLUSHDB  %v", result)
 }

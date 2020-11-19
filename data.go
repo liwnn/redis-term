@@ -9,7 +9,8 @@ import (
 type Data struct {
 	redis *Redis
 
-	db []*DataTree
+	db    []*DataTree
+	index int
 }
 
 // NewData new
@@ -42,10 +43,9 @@ func (d *Data) GetDatabases() []*DataNode {
 }
 
 // GetKeys get key
-func (d *Data) GetKeys(index int) []*DataNode {
-	d.redis.Select(index)
+func (d *Data) GetKeys() []*DataNode {
 	keys := d.redis.Keys("*")
-	n := d.db[index]
+	n := d.db[d.index]
 	for _, key := range keys {
 		n.AddKey(key)
 	}
@@ -58,9 +58,17 @@ func (d *Data) GetChildren(node *DataNode) []*DataNode {
 	return node.child
 }
 
-// GetValue value
-func (d *Data) GetValue(index int, key string) interface{} {
+// Select select db
+func (d *Data) Select(index int) {
+	if index == d.index {
+		return
+	}
 	d.redis.Select(index)
+	d.index = index
+}
+
+// GetValue value
+func (d *Data) GetValue(key string) interface{} {
 	val := d.redis.Type(key)
 	switch val {
 	case "string":
@@ -108,7 +116,7 @@ func (d *Data) Reload(node *DataNode) {
 	} else {
 		for _, k := range keys {
 			Log("%v %v %v", k[len(node.key):], k, node.key)
-			d.db[d.redis.index].addNode(node, k[len(node.key):], k)
+			d.db[d.index].addNode(node, k[len(node.key):], k)
 		}
 	}
 }
