@@ -9,7 +9,9 @@ import (
 )
 
 var (
+	pages   *tview.Pages
 	preview *Preview
+	modal   *tview.Modal
 )
 
 // Reference referenct
@@ -168,11 +170,7 @@ func (t *DBTree) getReference(node *tview.TreeNode) *Reference {
 	return typ
 }
 
-func (t *DBTree) deleteSelectKey() {
-	typ := t.getReference(t.selected)
-	if typ == nil {
-		return
-	}
+func (t *DBTree) deleteSelectKey(typ *Reference) {
 	switch typ.Name {
 	case "key":
 		Log("delete %v", typ.Data.key)
@@ -241,6 +239,18 @@ func (t *DBTree) reloadSelectKey() {
 	}
 }
 
+// ShowModal show modal
+func ShowModal(text string, okFunc func()) {
+	modal.SetText(text).
+		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+			if buttonIndex == 0 {
+				okFunc()
+			}
+			pages.HidePage("modal")
+		})
+	pages.ShowPage("modal")
+}
+
 // Run run
 func Run(host string, port int) {
 	client := NewRedis(fmt.Sprintf("%v:%v", host, port))
@@ -257,15 +267,35 @@ func Run(host string, port int) {
 
 	preview = NewPreview()
 	SetLogger(preview.output)
-	preview.SetDeleteFunc(tree.deleteSelectKey)
+	preview.SetDeleteFunc(func() {
+		typ := tree.getReference(tree.selected)
+		if typ == nil {
+			return
+		}
+		var notice string
+		switch typ.Name {
+		case "key":
+			notice = "Delete " + typ.Data.key + " ?"
+		case "index":
+			notice = fmt.Sprintf("FlushDB index:%v?", typ.Index)
+		case "dir":
+			notice = "Delete " + typ.Data.key + "* ?"
+		}
+		ShowModal(notice, func() {
+			tree.deleteSelectKey(typ)
+		})
+	})
 	preview.SetReloadFunc(tree.reloadSelectKey)
 
 	mainFlexBox := tview.NewFlex().SetDirection(tview.FlexColumn).
 		AddItem(keyFlexBox, 0, 1, true).
 		AddItem(preview.flexBox, 0, 4, false)
+	modal = tview.NewModal().
+		AddButtons([]string{"Ok", "Cancel"})
 
-	pages := tview.NewPages()
+	pages = tview.NewPages()
 	pages.AddPage("main", mainFlexBox, true, true)
+	pages.AddPage("modal", modal, true, false)
 
 	app := tview.NewApplication()
 	if err := app.SetRoot(pages, true).EnableMouse(true).Run(); err != nil {
