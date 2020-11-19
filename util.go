@@ -19,17 +19,19 @@ func isText(b []byte) bool {
 	if len(b) == 0 {
 		return true
 	}
+	// 超过30%的字符串高位时1（ascii大于126）或其它奇怪字符，则认为是二进制格式(v>>7 == 1)
 	var count int
 	for _, v := range b {
 		// 如果字符串含有空字符（‘\0’），则认为是二进制格式
 		if v == 0 {
 			return false
 		}
-		if v>>7 == 1 {
-			count++
+		// 文本的合法字符为ascii码从32到126的字符，加上'\n','\r','\t','\b'
+		if v >= 32 && v <= 126 || (v == '\n' || v == '\r' || v == '\t' || v == '\b') {
+			continue
 		}
+		count++
 	}
-	// 超过30%的字符串高位时1（ascii大于126）或其它奇怪字符，则认为是二进制格式
 	isBin := count*100 >= len(b)*30
 	return !isBin
 }
