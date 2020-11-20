@@ -25,8 +25,6 @@ type Reference struct {
 type DBTree struct {
 	tree *tview.TreeView
 	data *Data
-
-	selected *tview.TreeNode
 }
 
 // NewDBTree new
@@ -124,7 +122,6 @@ func (t *DBTree) OnSelected(node *tview.TreeNode) {
 
 // OnChanged on change
 func (t *DBTree) OnChanged(node *tview.TreeNode) {
-	t.selected = node
 	reference := node.GetReference()
 	if reference == nil {
 		return
@@ -182,23 +179,27 @@ func (t *DBTree) getReference(node *tview.TreeNode) *Reference {
 	return typ
 }
 
+func (t *DBTree) getCurrentNode() *tview.TreeNode {
+	return t.tree.GetCurrentNode()
+}
+
 func (t *DBTree) deleteSelectKey(typ *Reference) {
 	switch typ.Name {
 	case "key":
 		Log("delete %v", typ.Data.key)
 		t.data.Delete(typ.Data)
-		t.selected.SetText(typ.Data.key + " (Removed)")
-		t.selected.SetColor(tcell.ColorGray)
+		t.getCurrentNode().SetText(typ.Data.key + " (Removed)")
+		t.getCurrentNode().SetColor(tcell.ColorGray)
 		preview.SetContent(fmt.Sprintf("%v was removed", typ.Data.key), false)
 	case "index":
 		t.data.FlushDB(typ.Data)
-		t.selected.ClearChildren()
-		t.selected.SetText(typ.Data.name)
+		t.getCurrentNode().ClearChildren()
+		t.getCurrentNode().SetText(typ.Data.name)
 	case "dir":
 		t.data.Delete(typ.Data)
-		t.selected.SetText(typ.Data.name + " (Removed)")
-		t.selected.SetColor(tcell.ColorGray)
-		t.selected.ClearChildren()
+		t.getCurrentNode().SetText(typ.Data.name + " (Removed)")
+		t.getCurrentNode().SetColor(tcell.ColorGray)
+		t.getCurrentNode().ClearChildren()
 		preview.SetContent("", false)
 	default:
 		Log("delete %v not implement", typ.Name)
@@ -206,7 +207,7 @@ func (t *DBTree) deleteSelectKey(typ *Reference) {
 }
 
 func (t *DBTree) renameSelectKey() {
-	reference := t.getReference(t.selected)
+	reference := t.getReference(t.getCurrentNode())
 	if reference == nil {
 		return
 	}
@@ -222,12 +223,12 @@ func (t *DBTree) renameSelectKey() {
 
 		Log("rename %v %v", reference.Data.key, preview.GetKey())
 		t.data.Rename(reference.Data, preview.GetKey())
-		t.selected.SetText(reference.Data.key)
+		t.getCurrentNode().SetText(reference.Data.key)
 	})
 }
 
 func (t *DBTree) reloadSelectKey() {
-	reference := t.getReference(t.selected)
+	reference := t.getReference(t.getCurrentNode())
 	if reference == nil {
 		return
 	}
@@ -238,7 +239,7 @@ func (t *DBTree) reloadSelectKey() {
 		o := t.data.GetValue(reference.Data.key)
 		if o == nil {
 			reference.Data.removed = true
-			t.selected.SetText(reference.Data.name + " (Removed)")
+			t.getCurrentNode().SetText(reference.Data.name + " (Removed)")
 			preview.SetContent(fmt.Sprintf("%v was removed", reference.Data.key), false)
 			preview.SetDeleteText("Delete")
 		} else {
@@ -247,10 +248,10 @@ func (t *DBTree) reloadSelectKey() {
 		return
 	}
 
-	t.selected.ClearChildren()
+	t.getCurrentNode().ClearChildren()
 	t.data.Reload(reference.Data)
 
-	node := t.selected
+	node := t.getCurrentNode()
 	childen := reference.Data.GetChildren()
 	for _, dataNode := range childen {
 		r := &Reference{
@@ -267,8 +268,8 @@ func (t *DBTree) reloadSelectKey() {
 	}
 
 	if reference.Data.removed {
-		t.selected.SetText(reference.Data.name + " (Removed)")
-		t.selected.SetColor(tcell.ColorGray)
+		t.getCurrentNode().SetText(reference.Data.name + " (Removed)")
+		t.getCurrentNode().SetColor(tcell.ColorGray)
 	}
 }
 
@@ -301,7 +302,7 @@ func Run(host string, port int) {
 	preview = NewPreview()
 	SetLogger(preview.output)
 	preview.SetDeleteFunc(func() {
-		typ := tree.getReference(tree.selected)
+		typ := tree.getReference(tree.getCurrentNode())
 		if typ == nil {
 			return
 		}
