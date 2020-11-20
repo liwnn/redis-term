@@ -320,17 +320,10 @@ func Run(host string, port int) {
 	})
 	preview.SetReloadFunc(tree.reloadSelectKey)
 	preview.SetRenameFunc(tree.renameSelectKey)
-
-	outputText := tview.NewTextView()
-	outputText.
-		SetScrollable(true).
-		SetTitle("CONSOLE").
-		SetBorder(true)
-	SetLogger(outputText)
-
+	bottomPanel := createBottom()
 	rightFlexBox := tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(preview.flexBox, 0, 3, false).
-		AddItem(outputText, 0, 1, false)
+		AddItem(bottomPanel, 0, 1, false)
 
 	mainFlexBox := tview.NewFlex().SetDirection(tview.FlexColumn).
 		AddItem(keyFlexBox, 0, 1, true).
@@ -346,4 +339,44 @@ func Run(host string, port int) {
 	if err := app.SetRoot(pages, true).EnableMouse(true).Run(); err != nil {
 		panic(err)
 	}
+}
+
+func createBottom() tview.Primitive {
+	pages := tview.NewPages()
+
+	info := tview.NewTextView().
+		SetDynamicColors(true).
+		SetRegions(true).
+		SetWrap(false).
+		SetHighlightedFunc(func(added, removed, remaining []string) {
+			pages.SwitchToPage(added[0])
+		})
+
+	{
+		title := "CONSOLE"
+		console := tview.NewTextView()
+		console.
+			SetScrollable(true).
+			SetTitle(title).
+			SetBorder(true)
+		SetLogger(console)
+		pages.AddPage(title, console, true, true)
+		fmt.Fprintf(info, `["%v"][darkcyan]%s[white][""] `, title, title)
+	}
+
+	{
+		title := "HELP"
+		help := tview.NewTextView()
+		fmt.Fprint(help, title)
+		pages.AddPage(title, help, true, false)
+		fmt.Fprintf(info, `["%v"][darkcyan]%s[white][""] `, title, title)
+	}
+
+	info.Highlight("CONSOLE")
+
+	layout := tview.NewFlex().
+		SetDirection(tview.FlexRow).
+		AddItem(pages, 0, 1, false).
+		AddItem(info, 1, 1, false)
+	return layout
 }
