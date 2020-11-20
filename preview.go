@@ -90,7 +90,7 @@ func NewPreview() *Preview {
 		SetSelectable(true, false).
 		SetSeparator(' ').
 		SetFixed(1, 1).
-		SetSelectedStyle(style.Foreground(tcell.ColorWhite).Background(tcell.ColorBlue).Attributes(tcell.AttrBold)).
+		SetSelectedStyle(style.Foreground(tcell.ColorWhite).Background(tcell.ColorDarkSlateGrey).Attributes(tcell.AttrBold)).
 		SetEvaluateAllRows(true)
 	p := &Preview{
 		flexBox:   previewFlexBox,
