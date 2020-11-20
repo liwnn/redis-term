@@ -28,8 +28,6 @@ type Preview struct {
 	prevBtn   *tview.Button
 	nextBtn   *tview.Button
 
-	output *tview.TextView
-
 	pages     []page
 	pageDelta int
 	curPage   int
@@ -67,17 +65,10 @@ func NewPreview() *Preview {
 		SetBorder(true).
 		SetBorderColor(tcell.ColorSteelBlue)
 
-	outputText := tview.NewTextView()
-	outputText.
-		SetScrollable(true).
-		SetTitle("CONSOLE").
-		SetBorder(true)
-
 	previewFlexBox := tview.NewFlex()
 	previewFlexBox.SetDirection(tview.FlexRow)
 	previewFlexBox.AddItem(grid, 1, 0, false)
-	previewFlexBox.AddItem(showFlex, 0, 3, false)
-	previewFlexBox.AddItem(outputText, 0, 1, false)
+	previewFlexBox.AddItem(showFlex, 0, 1, false)
 
 	previewText := tview.NewTextView()
 	previewText.
@@ -90,13 +81,14 @@ func NewPreview() *Preview {
 		SetSelectable(true, false).
 		SetSeparator(' ').
 		SetFixed(1, 1).
-		SetSelectedStyle(style.Foreground(tcell.ColorWhite).Background(tcell.ColorDarkSlateGrey).Attributes(tcell.AttrBold)).
+		SetSelectedStyle(style.Foreground(tcell.ColorWhite).
+			Background(tcell.ColorDarkSlateGrey).
+			Attributes(tcell.AttrBold)).
 		SetEvaluateAllRows(true)
 	p := &Preview{
 		flexBox:   previewFlexBox,
 		textView:  previewText,
 		table:     previewTable,
-		output:    outputText,
 		showFlex:  showFlex,
 		pageDelta: 1000,
 		sizeText:  sizeText,

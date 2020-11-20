@@ -300,7 +300,6 @@ func Run(host string, port int) {
 	keyFlexBox.AddItem(tree.tree, 0, 1, true)
 
 	preview = NewPreview()
-	SetLogger(preview.output)
 	preview.SetDeleteFunc(func() {
 		typ := tree.getReference(tree.getCurrentNode())
 		if typ == nil {
@@ -322,9 +321,20 @@ func Run(host string, port int) {
 	preview.SetReloadFunc(tree.reloadSelectKey)
 	preview.SetRenameFunc(tree.renameSelectKey)
 
+	outputText := tview.NewTextView()
+	outputText.
+		SetScrollable(true).
+		SetTitle("CONSOLE").
+		SetBorder(true)
+	SetLogger(outputText)
+
+	rightFlexBox := tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(preview.flexBox, 0, 3, false).
+		AddItem(outputText, 0, 1, false)
+
 	mainFlexBox := tview.NewFlex().SetDirection(tview.FlexColumn).
 		AddItem(keyFlexBox, 0, 1, true).
-		AddItem(preview.flexBox, 0, 4, false)
+		AddItem(rightFlexBox, 0, 4, false)
 	modal = tview.NewModal().
 		AddButtons([]string{"Ok", "Cancel"})
 
