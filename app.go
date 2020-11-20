@@ -361,15 +361,14 @@ func createBottom() tview.Primitive {
 			SetBorder(true)
 		SetLogger(console)
 		pages.AddPage(title, console, true, true)
-		fmt.Fprintf(info, `["%v"][darkcyan]%s[white][""] `, title, title)
+		fmt.Fprintf(info, `["%v"][slategrey]%s[white][""] `, title, title)
 	}
 
 	{
-		title := "HELP"
-		help := tview.NewTextView()
-		fmt.Fprint(help, title)
-		pages.AddPage(title, help, true, false)
-		fmt.Fprintf(info, `["%v"][darkcyan]%s[white][""] `, title, title)
+		title := "redis-cli"
+		redisCli := tview.NewInputField()
+		pages.AddPage(title, redisCli, true, false)
+		fmt.Fprintf(info, `["%v"][slategrey]%s[white][""] `, title, title)
 	}
 
 	info.Highlight("CONSOLE")
