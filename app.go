@@ -286,8 +286,8 @@ func ShowModal(text string, okFunc func()) {
 }
 
 // Run run
-func Run(host string, port int) {
-	client := NewRedis(fmt.Sprintf("%v:%v", host, port))
+func Run(host string, port int, auth string) {
+	client := NewRedis(fmt.Sprintf("%v:%v", host, port), auth)
 	defer client.Close()
 	data := NewData(client)
 

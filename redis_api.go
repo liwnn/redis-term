@@ -21,12 +21,19 @@ type Redis struct {
 }
 
 // NewRedis new
-func NewRedis(address string) *Redis {
+func NewRedis(address string, auth string) *Redis {
 	conn, err := net.Dial("tcp", address)
 	if err != nil {
 		log.Fatalln(err)
 	}
 	client := redis.NewClient(conn)
+	if len(auth) > 0 {
+		r, err := client.Do("AUTH", auth)
+		if err != nil {
+			return nil
+		}
+		Log("AUTH", r.String())
+	}
 	return &Redis{
 		client: client,
 	}
