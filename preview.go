@@ -27,6 +27,7 @@ type Preview struct {
 	grid      *tview.Grid
 	prevBtn   *tview.Button
 	nextBtn   *tview.Button
+	numView   *tview.TextView
 
 	pages     []page
 	pageDelta int
@@ -36,6 +37,7 @@ type Preview struct {
 // NewPreview new
 func NewPreview() *Preview {
 	sizeText := tview.NewTextView()
+	numView := tview.NewTextView()
 	keyInput := tview.NewInputField()
 	keyInput.SetLabel("Key:").
 		SetLabelWidth(4).
@@ -53,7 +55,7 @@ func NewPreview() *Preview {
 	nextBtn.SetBackgroundColor(tcell.ColorDarkSlateGrey)
 	grid := tview.NewGrid().
 		SetRows(-1).
-		SetColumns(20, 10, 10, 30, 10, 5, 5, -1).
+		SetColumns(20, 10, 10, 30, 10, 10, 5, 5, -1).
 		SetBorders(false).
 		SetGap(0, 2).
 		SetMinSize(5, 5)
@@ -99,6 +101,7 @@ func NewPreview() *Preview {
 		grid:      grid,
 		nextBtn:   nextBtn,
 		prevBtn:   prevBtn,
+		numView:   numView,
 	}
 	prevBtn.SetSelectedFunc(p.prevPage)
 	nextBtn.SetSelectedFunc(p.nextPage)
@@ -134,6 +137,7 @@ func (p *Preview) init() {
 
 // SetContent set
 func (p *Preview) SetContent(o interface{}, valid bool) {
+	var count int
 	p.setSizeText("")
 	p.pages = p.pages[:0]
 	switch o.(type) {
@@ -147,6 +151,7 @@ func (p *Preview) SetContent(o interface{}, valid bool) {
 		}
 	case []KVText:
 		h := o.([]KVText)
+		count = len(h)
 		pageCount := len(h) / p.pageDelta
 		if len(h)%p.pageDelta > 0 {
 			pageCount++
@@ -161,6 +166,7 @@ func (p *Preview) SetContent(o interface{}, valid bool) {
 		})
 	case []string:
 		h := o.([]string)
+		count = len(h)
 		pageCount := len(h) / p.pageDelta
 		if len(h)%p.pageDelta > 0 {
 			pageCount++
@@ -176,11 +182,18 @@ func (p *Preview) SetContent(o interface{}, valid bool) {
 	}
 	p.Update(0)
 	if len(p.pages) > 1 {
-		p.grid.AddItem(p.nextBtn, 0, 6, 1, 1, 0, 0, false)
-		p.grid.AddItem(p.prevBtn, 0, 5, 1, 1, 0, 0, false) // 0行1列,占用1行1列(2则向后占一列)
+		p.grid.AddItem(p.nextBtn, 0, 7, 1, 1, 0, 0, false)
+		p.grid.AddItem(p.prevBtn, 0, 6, 1, 1, 0, 0, false) // 0行1列,占用1行1列(2则向后占一列)
 	} else {
 		p.grid.RemoveItem(p.nextBtn)
 		p.grid.RemoveItem(p.prevBtn)
+	}
+
+	if count > 0 {
+		p.numView.SetText("Count:" + strconv.Itoa(count))
+		p.grid.AddItem(p.numView, 0, 5, 1, 1, 0, 0, false)
+	} else {
+		p.grid.RemoveItem(p.numView)
 	}
 }
 
