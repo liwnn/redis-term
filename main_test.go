@@ -9,4 +9,8 @@ func TestRedis(t *testing.T) {
 	if isText([]byte(s)) {
 		t.Error(s)
 	}
+	sss := client.Scan(0, "*", 10000)
+	if sss == nil {
+
+	}
 }

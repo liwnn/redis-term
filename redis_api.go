@@ -59,6 +59,22 @@ func (r *Redis) GetDatabases() (int, error) {
 	return strconv.Atoi(d[1])
 }
 
+// Scan the keys
+func (r *Redis) Scan(cursor int, match string, count int) []string {
+	cursorStr := strconv.Itoa(cursor)
+	countStr := strconv.Itoa(count)
+	result, err := r.client.Do("SCAN", cursorStr, "MATCH", match, "COUNT", countStr)
+	if err != nil {
+		return nil
+	}
+	d, err := result.List()
+	if err != nil {
+		return nil
+	}
+	Log("[Redis] scan %v MATCH %v COUNT %v", cursor, match, count)
+	return d
+}
+
 // Keys keys
 func (r *Redis) Keys(pattern string) []string {
 	result, err := r.client.Do("keys", pattern)
