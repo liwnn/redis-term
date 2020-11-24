@@ -65,3 +65,17 @@ func (r *Result) Byte() []byte {
 	}
 	return r.object.val.([]byte)
 }
+
+// ToArray to array
+func (r *Result) ToArray() []*Result {
+	if r.object.Type != Array {
+		return nil
+	}
+
+	t := r.object.val.([]*Object)
+	ret := make([]*Result, 0, len(t))
+	for _, v := range t {
+		ret = append(ret, NewResult(v))
+	}
+	return ret
+}

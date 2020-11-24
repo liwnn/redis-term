@@ -32,7 +32,7 @@ func NewRedis(address string, auth string) *Redis {
 		if err != nil {
 			return nil
 		}
-		Log("AUTH", r.String())
+		Log("AUTH %v", r.String())
 	}
 	return &Redis{
 		client: client,
@@ -60,19 +60,21 @@ func (r *Redis) GetDatabases() (int, error) {
 }
 
 // Scan the keys
-func (r *Redis) Scan(cursor int, match string, count int) []string {
-	cursorStr := strconv.Itoa(cursor)
+func (r *Redis) Scan(cursor string, match string, count int) (string, []string) {
 	countStr := strconv.Itoa(count)
-	result, err := r.client.Do("SCAN", cursorStr, "MATCH", match, "COUNT", countStr)
+	result, err := r.client.Do("SCAN", cursor, "MATCH", match, "COUNT", countStr)
 	if err != nil {
-		return nil
+		return "", nil
 	}
-	d, err := result.List()
-	if err != nil {
-		return nil
+	d := result.ToArray()
+	if len(d) != 2 {
+		return "", nil
 	}
+	nextCursor := d[0].String()
+	keys, _ := d[1].List()
+
 	Log("[Redis] scan %v MATCH %v COUNT %v", cursor, match, count)
-	return d
+	return nextCursor, keys
 }
 
 // Keys keys
