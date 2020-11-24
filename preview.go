@@ -55,7 +55,7 @@ func NewPreview() *Preview {
 	nextBtn.SetBackgroundColor(tcell.ColorDarkSlateGrey)
 	grid := tview.NewGrid().
 		SetRows(-1).
-		SetColumns(20, 10, 10, 30, 10, 10, 5, 5, -1).
+		SetColumns(20, 10, 10, 30, 10, 15, 5, 5, -1).
 		SetBorders(false).
 		SetGap(0, 2).
 		SetMinSize(5, 5)
@@ -111,7 +111,7 @@ func NewPreview() *Preview {
 
 func (p *Preview) init() {
 	p.table.SetSelectionChangedFunc(func(row, column int) {
-		Log("Preview Update List sel row[%v] colujn[%v]", row, column)
+		Log("Preview Update List sel row[%v] column[%v]", row, column)
 		if row <= 0 {
 			return
 		}
@@ -272,7 +272,13 @@ func (p *Preview) Update(pageNum int) {
 	case string:
 		p.showFlex.Clear()
 		p.showFlex.AddItem(p.textView, 0, 1, false)
-		p.textView.SetText(o.(string))
+		text := o.(string)
+		if len(text) > 8192 {
+			text = text[:8192] + "..."
+			p.textView.SetText(text)
+		} else {
+			p.textView.SetText(text)
+		}
 	case []KVText:
 		p.showFlex.Clear()
 		p.showFlex.AddItem(p.table, 0, 1, false)
