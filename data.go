@@ -144,8 +144,8 @@ func (d *Data) Reload(node *DataNode) {
 		node.RemoveSelf()
 		node.removed = true
 	} else {
-		for _, k := range keys {
-			d.db[d.index].addNode(node, k[len(node.key):], k)
-		}
+		// for _, k := range keys {
+		// 	d.db[d.index].addNode(node, k[len(node.key):], k)
+		// }
 	}
 }

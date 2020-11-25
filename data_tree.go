@@ -29,6 +29,15 @@ func (n *DataNode) GetChildren() []*DataNode {
 	return n.child
 }
 
+// GetChildByKey return child.
+func (n *DataNode) GetChildByKey(key string) *DataNode {
+	for _, v := range n.child {
+		if v.key == key  {
+			return v
+		}
+	}
+	return nil
+}
 // RemoveChild remove child
 func (n *DataNode) RemoveChild(child *DataNode) *DataNode {
 	for i, v := range n.child {
@@ -38,6 +47,17 @@ func (n *DataNode) RemoveChild(child *DataNode) *DataNode {
 		}
 	}
 	return nil
+}
+
+// AddChild add child
+func (n *DataNode) AddChild(name, key string) *DataNode{
+	node := &DataNode{
+		name: name,
+		key: key,
+		p: n,
+	}
+	n.child = append(n.child, node)
+	return node
 }
 
 // RemoveSelf remove self.
@@ -65,45 +85,26 @@ func NewDataTree(rootName string) *DataTree {
 
 // AddKey 增加key
 func (t *DataTree) AddKey(key string) {
-	t.addNode(t.root, key, key)
-}
-
-// 增加节点
-func (t *DataTree) addNode(p *DataNode, name, key string) {
-	var n *DataNode
-	index := strings.Index(name, ":")
-	if index == -1 {
-		n = t.getNodeByName(p, name)
-		if n == nil {
-			n = &DataNode{
-				name: key,
-				key:  key,
-				p:    p,
-			}
-			p.child = append(p.child, n)
+	var lastColon int = -1
+	var p = t.root
+	for i, c := range key {
+		if c != ':' {
+			continue
 		}
-	} else {
-		n = t.getNodeByName(p, name[:index])
-		if n == nil {
-			index1 := strings.Index(key, name)
-			n = &DataNode{
-				name: name[:index],
-				key:  key[:index1+index+1],
-				p:    p,
-			}
-			p.child = append(p.child, n)
+		prefix := key[:i+1]
+		name := key[lastColon+1:i]
+		node := p.GetChildByKey(prefix)
+		if node == nil {
+			node = p.AddChild(name, prefix)
 		}
-		t.addNode(n, name[index+1:], key)
+		lastColon = i
+		p = node
 	}
-}
-
-func (t *DataTree) getNodeByName(p *DataNode, name string) *DataNode {
-	for _, v := range p.child {
-		if v.name == name && v.CanExpand() {
-			return v
-		}
+	name := key[lastColon+1:]
+	prefix := key
+	if node := p.GetChildByKey(prefix); node == nil {
+		node = p.AddChild(name, prefix)
 	}
-	return nil
 }
 
 // GetChildren name
