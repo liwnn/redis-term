@@ -78,8 +78,8 @@ func (t *DBTree) OnSelected(node *tview.TreeNode) {
 				})
 			}
 		case "index":
-			dataNodes := t.data.GetKeys()
-			// dataNodes := t.data.ScanAllKeys()
+			//dataNodes := t.data.GetKeys()
+			dataNodes := t.data.ScanAllKeys()
 			for _, dataNode := range dataNodes {
 				r := &Reference{
 					Index: typ.Index,

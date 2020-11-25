@@ -32,12 +32,13 @@ func (n *DataNode) GetChildren() []*DataNode {
 // GetChildByKey return child.
 func (n *DataNode) GetChildByKey(key string) *DataNode {
 	for _, v := range n.child {
-		if v.key == key  {
+		if v.key == key {
 			return v
 		}
 	}
 	return nil
 }
+
 // RemoveChild remove child
 func (n *DataNode) RemoveChild(child *DataNode) *DataNode {
 	for i, v := range n.child {
@@ -50,11 +51,11 @@ func (n *DataNode) RemoveChild(child *DataNode) *DataNode {
 }
 
 // AddChild add child
-func (n *DataNode) AddChild(name, key string) *DataNode{
+func (n *DataNode) AddChild(name, key string) *DataNode {
 	node := &DataNode{
 		name: name,
-		key: key,
-		p: n,
+		key:  key,
+		p:    n,
 	}
 	n.child = append(n.child, node)
 	return node
@@ -92,7 +93,7 @@ func (t *DataTree) AddKey(key string) {
 			continue
 		}
 		prefix := key[:i+1]
-		name := key[lastColon+1:i]
+		name := key[lastColon+1 : i]
 		node := p.GetChildByKey(prefix)
 		if node == nil {
 			node = p.AddChild(name, prefix)
@@ -102,9 +103,9 @@ func (t *DataTree) AddKey(key string) {
 	}
 	name := key[lastColon+1:]
 	prefix := key
-	if node := p.GetChildByKey(prefix); node == nil {
-		node = p.AddChild(name, prefix)
-	}
+	//if node := p.GetChildByKey(prefix); node == nil {
+	p.AddChild(name, prefix)
+	//}
 }
 
 // GetChildren name
