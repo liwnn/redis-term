@@ -43,24 +43,34 @@ func (d *Data) GetDatabases() []*DataNode {
 	return r
 }
 
+// ScanAllKeys get all key
+func (d *Data) ScanAllKeys() []*DataNode {
+	n := d.db[d.index]
+
+	var cursor = "0"
+	for {
+		var keys []string
+		cursor, keys = d.redis.Scan(cursor, "*", 10000)
+		for _, key := range keys {
+			n.AddKey(key)
+		}
+		if cursor == "0" {
+			break
+		}
+	}
+
+	return n.GetChildren(n.root)
+}
+
 // GetKeys get key
 func (d *Data) GetKeys() []*DataNode {
-	cursor, keys := d.redis.Scan("0", "*", 10000)
+	keys := d.redis.Keys("*")
 	n := d.db[d.index]
 	for _, key := range keys {
 		n.AddKey(key)
 	}
 
-	_ = cursor
 	return n.GetChildren(n.root)
-
-	// keys := d.redis.Keys("*")
-	// n := d.db[d.index]
-	// for _, key := range keys {
-	// 	n.AddKey(key)
-	// }
-
-	// return n.GetChildren(n.root)
 }
 
 // GetChildren child
