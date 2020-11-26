@@ -23,8 +23,9 @@ type Reference struct {
 
 // DBTree tree.
 type DBTree struct {
-	tree *tview.TreeView
-	data *Data
+	tree     *tview.TreeView
+	data     *Data
+	lastNode *tview.TreeNode
 }
 
 // NewDBTree new
@@ -110,6 +111,10 @@ func (t *DBTree) OnSelected(node *tview.TreeNode) {
 			}
 		}
 	} else {
+		if t.tree.GetCurrentNode() != t.lastNode && node.IsExpanded() {
+			t.lastNode = node
+			return
+		}
 		node.SetExpanded(!node.IsExpanded())
 	}
 	if typ.Data != nil && typ.Data.CanExpand() {
@@ -119,6 +124,7 @@ func (t *DBTree) OnSelected(node *tview.TreeNode) {
 			node.SetText("▶ " + typ.Data.name)
 		}
 	}
+	t.lastNode = node
 }
 
 // OnChanged on change
