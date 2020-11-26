@@ -294,7 +294,11 @@ func (p *Preview) Update(pageNum int) {
 			index := p.curPage*p.pageDelta + i + 1
 			p.table.SetCell(i+1, 0, tview.NewTableCell(strconv.Itoa(index)))
 			p.table.SetCell(i+1, 1, tview.NewTableCell(kv.Key))
-			p.table.SetCell(i+1, 2, tview.NewTableCell(kv.Value))
+			if len(kv.Value) > 1024 {
+				p.table.SetCell(i+1, 2, tview.NewTableCell(kv.Value[:1024]+"..."))
+			} else {
+				p.table.SetCell(i+1, 2, tview.NewTableCell(kv.Value))
+			}
 		}
 	case []string:
 		p.showFlex.Clear()
@@ -309,7 +313,11 @@ func (p *Preview) Update(pageNum int) {
 		for i, v := range h {
 			index := p.curPage*p.pageDelta + i + 1
 			p.table.SetCell(i+1, 0, tview.NewTableCell(strconv.Itoa(index)))
-			p.table.SetCell(i+1, 1, tview.NewTableCell(v))
+			if len(v) > 1024 {
+				p.table.SetCell(i+1, 1, tview.NewTableCell(v[:1024]+"..."))
+			} else {
+				p.table.SetCell(i+1, 1, tview.NewTableCell(v))
+			}
 		}
 	}
 }
