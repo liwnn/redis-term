@@ -139,14 +139,21 @@ func (d *Data) FlushDB(node *DataNode) {
 func (d *Data) Reload(node *DataNode) {
 	Log("Data: Reload key %v*", node.key)
 	node.ClearChildren()
-	keys := d.redis.Keys(node.key + "*")
-	if len(keys) == 0 {
+
+	var cursor = "0"
+	for {
+		var keys []string
+		cursor, keys = d.redis.Scan(cursor, node.key+"*", 10000)
+		for _, key := range keys {
+			d.db[d.index].AddKey(key)
+		}
+		if cursor == "0" {
+			break
+		}
+	}
+
+	if !node.HasChild() {
 		node.RemoveSelf()
 		node.removed = true
-	} else {
-		for _, k := range keys {
-			// d.db[d.index].addNode(node, k[len(node.key):], k)
-			d.db[d.index].AddKey(k)
-		}
 	}
 }
