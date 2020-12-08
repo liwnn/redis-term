@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"strings"
 )
 
 // Data data
@@ -94,6 +95,12 @@ func (d *Data) Rename(node *DataNode, newKey string) {
 		log.Fatal(err)
 	}
 	node.key = newKey
+	index := strings.LastIndex(newKey, ":")
+	if index != -1 {
+		node.name = newKey[index+1:]
+	} else {
+		node.name = newKey
+	}
 }
 
 // GetValue value

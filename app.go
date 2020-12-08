@@ -230,7 +230,7 @@ func (t *DBTree) renameSelectKey() {
 
 		Log("rename %v %v", reference.Data.key, preview.GetKey())
 		t.data.Rename(reference.Data, preview.GetKey())
-		t.getCurrentNode().SetText(reference.Data.key)
+		t.getCurrentNode().SetText(reference.Data.name)
 	})
 }
 
