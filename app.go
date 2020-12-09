@@ -373,7 +373,12 @@ func createBottom() tview.Primitive {
 
 	{
 		title := "redis-cli"
-		redisCli := tview.NewInputField()
+		cmdLine := tview.NewInputField()
+		view := tview.NewTextView()
+		redisCli := tview.NewFlex().
+			SetDirection(tview.FlexRow).
+			AddItem(view, 0, 1, false).
+			AddItem(cmdLine, 1, 1, true)
 		pages.AddPage(title, redisCli, true, false)
 		fmt.Fprintf(info, `["%v"][slategrey]%s[white][""] `, title, title)
 	}
