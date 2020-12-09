@@ -374,6 +374,7 @@ func createBottom() tview.Primitive {
 	{
 		title := "redis-cli"
 		cmdLine := tview.NewInputField()
+		cmdLine.SetPlaceholder("input command")
 		view := tview.NewTextView()
 		redisCli := tview.NewFlex().
 			SetDirection(tview.FlexRow).
