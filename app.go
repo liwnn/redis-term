@@ -44,6 +44,11 @@ func NewDBTree(rootName string, data *Data) *DBTree {
 	return dbTree
 }
 
+// SetData change db data.
+func (t *DBTree) SetData(data *Data) {
+	t.data = data
+}
+
 // AddNode add node
 func (t *DBTree) AddNode(target *tview.TreeNode, name string, reference *Reference) {
 	node := tview.NewTreeNode(name).SetSelectable(true)
@@ -299,11 +304,19 @@ func Run(host string, port int, auth string) {
 	data := NewData(client)
 
 	tree := NewDBTree(host, data)
+	tree.tree.SetBorder(true)
+	tree.tree.SetTitle("KEYS")
+
+	dbSel := tview.NewDropDown().SetLabel("Select an option:")
+	dbSel.AddOption("127.0.0.1", func() {
+	})
+	dbSel.AddOption("172.25.128.116", func() {
+	})
+	dbSel.SetCurrentOption(0)
 
 	keyFlexBox := tview.NewFlex()
 	keyFlexBox.SetDirection(tview.FlexRow)
-	keyFlexBox.SetBorder(true)
-	keyFlexBox.SetTitle("KEYS")
+	keyFlexBox.AddItem(dbSel, 1, 0, false)
 	keyFlexBox.AddItem(tree.tree, 0, 1, true)
 
 	preview = NewPreview()
