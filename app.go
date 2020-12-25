@@ -29,7 +29,7 @@ type DBTree struct {
 }
 
 // NewDBTree new
-func NewDBTree(rootName string, data *Data) *DBTree {
+func NewDBTree(rootName string) *DBTree {
 	root := tview.NewTreeNode(rootName).SetColor(tcell.ColorYellow)
 	root.SetReference(&Reference{
 		Name: "db",
@@ -37,7 +37,6 @@ func NewDBTree(rootName string, data *Data) *DBTree {
 	tree := tview.NewTreeView().SetRoot(root).SetCurrentNode(root)
 	dbTree := &DBTree{
 		tree: tree,
-		data: data,
 	}
 	tree.SetSelectedFunc(dbTree.OnSelected)
 	tree.SetChangedFunc(dbTree.OnChanged)
@@ -45,7 +44,9 @@ func NewDBTree(rootName string, data *Data) *DBTree {
 }
 
 // SetData change db data.
-func (t *DBTree) SetData(data *Data) {
+func (t *DBTree) SetData(name string, data *Data) {
+	t.tree.GetRoot().ClearChildren()
+	t.tree.GetRoot().SetText(name)
 	t.data = data
 }
 
@@ -297,21 +298,36 @@ func ShowModal(text string, okFunc func()) {
 	pages.ShowPage("modal")
 }
 
-// Run run
-func Run(host string, port int, auth string) {
-	client := NewRedis(fmt.Sprintf("%v:%v", host, port), auth)
-	defer client.Close()
-	data := NewData(client)
+// RedisConfig config
+type RedisConfig struct {
+	Name string
+	Host string
+	Port int
+	Auth string
+}
 
-	tree := NewDBTree(host, data)
+// Run run
+func Run(configs ...RedisConfig) {
+	tree := NewDBTree("")
 	tree.tree.SetBorder(true)
 	tree.tree.SetTitle("KEYS")
 
-	dbSel := tview.NewDropDown().SetLabel("Select an option:")
-	dbSel.AddOption("127.0.0.1", func() {
-	})
-	dbSel.AddOption("172.25.128.116", func() {
-	})
+	dbSel := tview.NewDropDown().SetLabel("Select server:")
+	var clients = make(map[string]*Redis)
+	for _, config := range configs {
+		func(config RedisConfig) {
+			dbSel.AddOption(config.Host, func() {
+				address := fmt.Sprintf("%v:%v", config.Host, config.Port)
+				client, ok := clients[address]
+				if !ok {
+					client = NewRedis(address, config.Auth)
+					clients[address] = client
+				}
+				data := NewData(client)
+				tree.SetData(config.Host, data)
+			})
+		}(config)
+	}
 	dbSel.SetCurrentOption(0)
 
 	keyFlexBox := tview.NewFlex()
@@ -358,6 +374,10 @@ func Run(host string, port int, auth string) {
 	app := tview.NewApplication()
 	if err := app.SetRoot(pages, true).EnableMouse(true).Run(); err != nil {
 		panic(err)
+	}
+
+	for _, client := range clients {
+		client.Close()
 	}
 }
 
