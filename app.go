@@ -326,6 +326,8 @@ type App struct {
 	tree        *DBTree
 	leftFlexBox *tview.Flex
 	selectDrop  *tview.DropDown
+
+	clients map[string]*DBTree
 }
 
 // NewApp new
@@ -366,8 +368,8 @@ func (a *App) Run(configs ...RedisConfig) {
 		panic(err)
 	}
 
-	for _, client := range clients {
-		client.Close()
+	for _, client := range a.clients {
+		a.client.data.Close()
 	}
 }
 
@@ -464,5 +466,3 @@ func (a *App) createBottom() tview.Primitive {
 		AddItem(info, 1, 1, false)
 	return layout
 }
-
-var clients = make(map[string]*Redis)
