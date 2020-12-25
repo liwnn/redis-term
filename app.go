@@ -33,6 +33,9 @@ func NewDBTree(tree *tview.TreeView) *DBTree {
 	dbTree := &DBTree{
 		tree: tree,
 	}
+
+	tree.SetSelectedFunc(dbTree.OnSelected)
+	tree.SetChangedFunc(dbTree.OnChanged)
 	return dbTree
 }
 
@@ -279,6 +282,25 @@ func (t *DBTree) reloadSelectKey() {
 	}
 }
 
+func (t *DBTree) deleteKey() {
+	typ := t.getReference(t.getCurrentNode())
+	if typ == nil {
+		return
+	}
+	var notice string
+	switch typ.Name {
+	case "key":
+		notice = "Delete " + typ.Data.key + " ?"
+	case "index":
+		notice = fmt.Sprintf("FlushDB index:%v?", typ.Index)
+	case "dir":
+		notice = "Delete " + typ.Data.key + "* ?"
+	}
+	ShowModal(notice, func() {
+		t.deleteSelectKey(typ)
+	})
+}
+
 // ShowModal show modal
 func ShowModal(text string, okFunc func()) {
 	modal.SetText(text).
@@ -301,7 +323,9 @@ type RedisConfig struct {
 
 // App app
 type App struct {
-	tree *DBTree
+	tree        *DBTree
+	leftFlexBox *tview.Flex
+	selectDrop  *tview.DropDown
 }
 
 // NewApp new
@@ -311,27 +335,23 @@ func NewApp() *App {
 
 // Run run
 func (a *App) Run(configs ...RedisConfig) {
-	dbSel := a.createSelectDB(configs...)
-
-	treeView := a.createTree("")
-	tree := NewDBTree(treeView)
-	treeView.SetSelectedFunc(tree.OnSelected)
-	treeView.SetChangedFunc(tree.OnChanged)
+	a.selectDrop = a.createSelectDB(configs...)
+	a.tree = NewDBTree(a.createTree(""))
 
 	preview = NewPreview()
-	preview.SetDeleteFunc(a.deleteKey)
-	preview.SetReloadFunc(tree.reloadSelectKey)
-	preview.SetRenameFunc(tree.renameSelectKey)
+	preview.SetDeleteFunc(a.tree.deleteKey)
+	preview.SetReloadFunc(a.tree.reloadSelectKey)
+	preview.SetRenameFunc(a.tree.renameSelectKey)
 
-	keyFlexBox := tview.NewFlex()
-	keyFlexBox.SetDirection(tview.FlexRow)
-	keyFlexBox.AddItem(dbSel, 1, 0, false)
-	keyFlexBox.AddItem(tree.tree, 0, 1, true)
+	a.leftFlexBox = tview.NewFlex().SetDirection(tview.FlexRow)
 
-	rightFlexBox := a.createRight()
+	bottomPanel := a.createBottom()
+	rightFlexBox := tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(preview.flexBox, 0, 3, false).
+		AddItem(bottomPanel, 0, 1, false)
 
 	mainFlexBox := tview.NewFlex().SetDirection(tview.FlexColumn).
-		AddItem(keyFlexBox, 0, 1, true).
+		AddItem(a.leftFlexBox, 0, 1, true).
 		AddItem(rightFlexBox, 0, 4, false)
 
 	modal := a.createModal()
@@ -340,10 +360,7 @@ func (a *App) Run(configs ...RedisConfig) {
 	pages.AddPage("main", mainFlexBox, true, true)
 	pages.AddPage("modal", modal, true, false)
 
-	a.tree = tree
-
-	//
-	dbSel.SetCurrentOption(0)
+	a.selectDrop.SetCurrentOption(0)
 
 	if err := tview.NewApplication().SetRoot(pages, true).EnableMouse(true).Run(); err != nil {
 		panic(err)
@@ -354,23 +371,21 @@ func (a *App) Run(configs ...RedisConfig) {
 	}
 }
 
-func (a *App) deleteKey() {
-	typ := a.tree.getReference(a.tree.getCurrentNode())
-	if typ == nil {
-		return
+// Show show
+func (a *App) Show(config RedisConfig) {
+	address := fmt.Sprintf("%v:%v", config.Host, config.Port)
+	client, ok := clients[address]
+	if !ok {
+		client = NewRedis(address, config.Auth)
+		clients[address] = client
 	}
-	var notice string
-	switch typ.Name {
-	case "key":
-		notice = "Delete " + typ.Data.key + " ?"
-	case "index":
-		notice = fmt.Sprintf("FlushDB index:%v?", typ.Index)
-	case "dir":
-		notice = "Delete " + typ.Data.key + "* ?"
-	}
-	ShowModal(notice, func() {
-		a.tree.deleteSelectKey(typ)
-	})
+
+	a.leftFlexBox.Clear()
+	a.leftFlexBox.AddItem(a.selectDrop, 1, 0, false)
+	a.leftFlexBox.AddItem(a.tree.tree, 0, 1, true)
+
+	data := NewData(client)
+	a.tree.SetData(config.Host, data)
 }
 
 func (a *App) createTree(rootName string) *tview.TreeView {
@@ -394,26 +409,6 @@ func (a *App) createSelectDB(configs ...RedisConfig) *tview.DropDown {
 		})
 	}
 	return dbSel
-}
-
-// Show show
-func (a *App) Show(config RedisConfig) {
-	address := fmt.Sprintf("%v:%v", config.Host, config.Port)
-	client, ok := clients[address]
-	if !ok {
-		client = NewRedis(address, config.Auth)
-		clients[address] = client
-	}
-	data := NewData(client)
-	a.tree.SetData(config.Host, data)
-}
-
-func (a *App) createRight() *tview.Flex {
-	bottomPanel := a.createBottom()
-	rightFlexBox := tview.NewFlex().SetDirection(tview.FlexRow).
-		AddItem(preview.flexBox, 0, 3, false).
-		AddItem(bottomPanel, 0, 1, false)
-	return rightFlexBox
 }
 
 func (a *App) createModal() *tview.Modal {
