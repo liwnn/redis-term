@@ -29,17 +29,10 @@ type DBTree struct {
 }
 
 // NewDBTree new
-func NewDBTree(rootName string) *DBTree {
-	root := tview.NewTreeNode(rootName).SetColor(tcell.ColorYellow)
-	root.SetReference(&Reference{
-		Name: "db",
-	})
-	tree := tview.NewTreeView().SetRoot(root).SetCurrentNode(root)
+func NewDBTree(tree *tview.TreeView) *DBTree {
 	dbTree := &DBTree{
 		tree: tree,
 	}
-	tree.SetSelectedFunc(dbTree.OnSelected)
-	tree.SetChangedFunc(dbTree.OnChanged)
 	return dbTree
 }
 
@@ -306,73 +299,53 @@ type RedisConfig struct {
 	Auth string
 }
 
-// Run run
-func Run(configs ...RedisConfig) {
-	tree := NewDBTree("")
-	tree.tree.SetBorder(true)
-	tree.tree.SetTitle("KEYS")
+// App app
+type App struct {
+	tree *DBTree
+}
 
-	dbSel := tview.NewDropDown().SetLabel("Select server:")
-	var clients = make(map[string]*Redis)
-	for _, config := range configs {
-		func(config RedisConfig) {
-			dbSel.AddOption(config.Host, func() {
-				address := fmt.Sprintf("%v:%v", config.Host, config.Port)
-				client, ok := clients[address]
-				if !ok {
-					client = NewRedis(address, config.Auth)
-					clients[address] = client
-				}
-				data := NewData(client)
-				tree.SetData(config.Host, data)
-			})
-		}(config)
-	}
-	dbSel.SetCurrentOption(0)
+// NewApp new
+func NewApp() *App {
+	return &App{}
+}
+
+// Run run
+func (a *App) Run(configs ...RedisConfig) {
+	dbSel := a.createSelectDB(configs...)
+
+	treeView := a.createTree("")
+	tree := NewDBTree(treeView)
+	treeView.SetSelectedFunc(tree.OnSelected)
+	treeView.SetChangedFunc(tree.OnChanged)
+
+	preview = NewPreview()
+	preview.SetDeleteFunc(a.deleteKey)
+	preview.SetReloadFunc(tree.reloadSelectKey)
+	preview.SetRenameFunc(tree.renameSelectKey)
 
 	keyFlexBox := tview.NewFlex()
 	keyFlexBox.SetDirection(tview.FlexRow)
 	keyFlexBox.AddItem(dbSel, 1, 0, false)
 	keyFlexBox.AddItem(tree.tree, 0, 1, true)
 
-	preview = NewPreview()
-	preview.SetDeleteFunc(func() {
-		typ := tree.getReference(tree.getCurrentNode())
-		if typ == nil {
-			return
-		}
-		var notice string
-		switch typ.Name {
-		case "key":
-			notice = "Delete " + typ.Data.key + " ?"
-		case "index":
-			notice = fmt.Sprintf("FlushDB index:%v?", typ.Index)
-		case "dir":
-			notice = "Delete " + typ.Data.key + "* ?"
-		}
-		ShowModal(notice, func() {
-			tree.deleteSelectKey(typ)
-		})
-	})
-	preview.SetReloadFunc(tree.reloadSelectKey)
-	preview.SetRenameFunc(tree.renameSelectKey)
-	bottomPanel := createBottom()
-	rightFlexBox := tview.NewFlex().SetDirection(tview.FlexRow).
-		AddItem(preview.flexBox, 0, 3, false).
-		AddItem(bottomPanel, 0, 1, false)
+	rightFlexBox := a.createRight()
 
 	mainFlexBox := tview.NewFlex().SetDirection(tview.FlexColumn).
 		AddItem(keyFlexBox, 0, 1, true).
 		AddItem(rightFlexBox, 0, 4, false)
-	modal = tview.NewModal().
-		AddButtons([]string{"Ok", "Cancel"})
+
+	modal := a.createModal()
 
 	pages = tview.NewPages()
 	pages.AddPage("main", mainFlexBox, true, true)
 	pages.AddPage("modal", modal, true, false)
 
-	app := tview.NewApplication()
-	if err := app.SetRoot(pages, true).EnableMouse(true).Run(); err != nil {
+	a.tree = tree
+
+	//
+	dbSel.SetCurrentOption(0)
+
+	if err := tview.NewApplication().SetRoot(pages, true).EnableMouse(true).Run(); err != nil {
 		panic(err)
 	}
 
@@ -381,7 +354,75 @@ func Run(configs ...RedisConfig) {
 	}
 }
 
-func createBottom() tview.Primitive {
+func (a *App) deleteKey() {
+	typ := a.tree.getReference(a.tree.getCurrentNode())
+	if typ == nil {
+		return
+	}
+	var notice string
+	switch typ.Name {
+	case "key":
+		notice = "Delete " + typ.Data.key + " ?"
+	case "index":
+		notice = fmt.Sprintf("FlushDB index:%v?", typ.Index)
+	case "dir":
+		notice = "Delete " + typ.Data.key + "* ?"
+	}
+	ShowModal(notice, func() {
+		a.tree.deleteSelectKey(typ)
+	})
+}
+
+func (a *App) createTree(rootName string) *tview.TreeView {
+	root := tview.NewTreeNode(rootName).SetColor(tcell.ColorYellow)
+	root.SetReference(&Reference{
+		Name: "db",
+	})
+	tree := tview.NewTreeView().SetRoot(root).SetCurrentNode(root)
+	tree.SetBorder(true)
+	tree.SetTitle("KEYS")
+
+	return tree
+}
+
+func (a *App) createSelectDB(configs ...RedisConfig) *tview.DropDown {
+	dbSel := tview.NewDropDown().SetLabel("Select server:")
+	for _, config := range configs {
+		t := config
+		dbSel.AddOption(t.Host, func() {
+			a.Show(t)
+		})
+	}
+	return dbSel
+}
+
+// Show show
+func (a *App) Show(config RedisConfig) {
+	address := fmt.Sprintf("%v:%v", config.Host, config.Port)
+	client, ok := clients[address]
+	if !ok {
+		client = NewRedis(address, config.Auth)
+		clients[address] = client
+	}
+	data := NewData(client)
+	a.tree.SetData(config.Host, data)
+}
+
+func (a *App) createRight() *tview.Flex {
+	bottomPanel := a.createBottom()
+	rightFlexBox := tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(preview.flexBox, 0, 3, false).
+		AddItem(bottomPanel, 0, 1, false)
+	return rightFlexBox
+}
+
+func (a *App) createModal() *tview.Modal {
+	modal = tview.NewModal().
+		AddButtons([]string{"Ok", "Cancel"})
+	return modal
+}
+
+func (a *App) createBottom() tview.Primitive {
 	pages := tview.NewPages()
 
 	info := tview.NewTextView().
@@ -428,3 +469,5 @@ func createBottom() tview.Primitive {
 		AddItem(info, 1, 1, false)
 	return layout
 }
+
+var clients = make(map[string]*Redis)

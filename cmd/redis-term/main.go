@@ -20,5 +20,21 @@ func init() {
 func main() {
 	flag.Parse()
 
-	redisterm.Run(host, port, auth)
+	var configs = []redisterm.RedisConfig{
+		{
+			Name: "127.0.0.1:9898",
+			Host: host,
+			Port: port,
+			Auth: auth,
+		},
+		{
+			Name: "172.25.128.116:9898",
+			Host: "172.25.128.116",
+			Port: 9898,
+			Auth: "sanguo",
+		},
+	}
+
+	app := redisterm.NewApp()
+	app.Run(configs...)
 }
