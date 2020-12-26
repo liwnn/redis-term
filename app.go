@@ -3,6 +3,7 @@ package redisterm
 import (
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -160,7 +161,9 @@ func (t *DBTree) OnChanged(node *tview.TreeNode) {
 	if typ.Name == "key" {
 		if !typ.Data.removed {
 			t.data.Select(typ.Index)
+			begin := time.Now()
 			o := t.data.GetValue(typ.Data.key)
+			Log("redis value time cost %v", time.Since(begin))
 			t.preview.SetContent(o, true)
 		} else {
 			t.preview.SetContent(fmt.Sprintf("%v was removed", typ.Data.key), false)
