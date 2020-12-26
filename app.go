@@ -9,9 +9,8 @@ import (
 )
 
 var (
-	pages   *tview.Pages
-	preview *Preview
-	modal   *tview.Modal
+	pages *tview.Pages
+	modal *tview.Modal
 )
 
 // Reference referenct
@@ -26,16 +25,23 @@ type DBTree struct {
 	tree     *tview.TreeView
 	data     *Data
 	lastNode *tview.TreeNode
+	preview  *Preview
 }
 
 // NewDBTree new
-func NewDBTree(tree *tview.TreeView) *DBTree {
+func NewDBTree(tree *tview.TreeView, preview *Preview) *DBTree {
 	dbTree := &DBTree{
-		tree: tree,
+		tree:    tree,
+		preview: preview,
 	}
 
 	tree.SetSelectedFunc(dbTree.OnSelected)
 	tree.SetChangedFunc(dbTree.OnChanged)
+
+	preview.SetDeleteFunc(dbTree.deleteKey)
+	preview.SetReloadFunc(dbTree.reloadSelectKey)
+	preview.SetRenameFunc(dbTree.renameSelectKey)
+
 	return dbTree
 }
 
@@ -141,34 +147,34 @@ func (t *DBTree) OnChanged(node *tview.TreeNode) {
 	}
 	if typ.Name == "db" {
 		Log("OnChanged: db %v", typ.Name)
-		preview.SetOpBtnVisible(false)
+		t.preview.SetOpBtnVisible(false)
 	} else {
 		if typ.Name == "index" {
 			Log("OnChanged: %v - %v", typ.Name, typ.Index)
 		} else {
 			Log("OnChanged: %v - %v", typ.Name, typ.Data.key)
 		}
-		preview.SetOpBtnVisible(true)
+		t.preview.SetOpBtnVisible(true)
 	}
 
 	if typ.Name == "key" {
 		if !typ.Data.removed {
 			t.data.Select(typ.Index)
 			o := t.data.GetValue(typ.Data.key)
-			preview.SetContent(o, true)
+			t.preview.SetContent(o, true)
 		} else {
-			preview.SetContent(fmt.Sprintf("%v was removed", typ.Data.key), false)
+			t.preview.SetContent(fmt.Sprintf("%v was removed", typ.Data.key), false)
 		}
-		preview.SetDeleteText("Delete")
-		preview.SetKey(typ.Data.key)
+		t.preview.SetDeleteText("Delete")
+		t.preview.SetKey(typ.Data.key)
 	} else {
 		if typ.Name == "index" {
-			preview.SetDeleteText("Flush")
+			t.preview.SetDeleteText("Flush")
 		} else {
-			preview.SetDeleteText("Delete")
+			t.preview.SetDeleteText("Delete")
 		}
-		preview.SetContent("", false)
-		preview.SetKey("")
+		t.preview.SetContent("", false)
+		t.preview.SetKey("")
 	}
 }
 
@@ -199,7 +205,7 @@ func (t *DBTree) deleteSelectKey(typ *Reference) {
 		t.data.Delete(typ.Data)
 		t.getCurrentNode().SetText(typ.Data.key + " (Removed)")
 		t.getCurrentNode().SetColor(tcell.ColorGray)
-		preview.SetContent(fmt.Sprintf("%v was removed", typ.Data.key), false)
+		t.preview.SetContent(fmt.Sprintf("%v was removed", typ.Data.key), false)
 	case "index":
 		t.data.FlushDB(typ.Data)
 		t.getCurrentNode().ClearChildren()
@@ -209,7 +215,7 @@ func (t *DBTree) deleteSelectKey(typ *Reference) {
 		t.getCurrentNode().SetText(typ.Data.name + " (Removed)")
 		t.getCurrentNode().SetColor(tcell.ColorGray)
 		t.getCurrentNode().ClearChildren()
-		preview.SetContent("", false)
+		t.preview.SetContent("", false)
 	default:
 		Log("delete %v not implement", typ.Name)
 	}
@@ -224,14 +230,14 @@ func (t *DBTree) renameSelectKey() {
 		return
 	}
 
-	notice := fmt.Sprintf("Rename %v->%v", reference.Data.key, preview.GetKey())
+	notice := fmt.Sprintf("Rename %v->%v", reference.Data.key, t.preview.GetKey())
 	ShowModal(notice, func() {
-		if reference.Data.key == preview.GetKey() {
+		if reference.Data.key == t.preview.GetKey() {
 			return
 		}
 
-		Log("rename %v %v", reference.Data.key, preview.GetKey())
-		t.data.Rename(reference.Data, preview.GetKey())
+		Log("rename %v %v", reference.Data.key, t.preview.GetKey())
+		t.data.Rename(reference.Data, t.preview.GetKey())
 		t.getCurrentNode().SetText(reference.Data.name)
 	})
 }
@@ -249,10 +255,10 @@ func (t *DBTree) reloadSelectKey() {
 		if o == nil {
 			reference.Data.removed = true
 			t.getCurrentNode().SetText(reference.Data.name + " (Removed)")
-			preview.SetContent(fmt.Sprintf("%v was removed", reference.Data.key), false)
-			preview.SetDeleteText("Delete")
+			t.preview.SetContent(fmt.Sprintf("%v was removed", reference.Data.key), false)
+			t.preview.SetDeleteText("Delete")
 		} else {
-			preview.SetContent(o, true)
+			t.preview.SetContent(o, true)
 		}
 		return
 	}
@@ -328,40 +334,32 @@ type RedisConfig struct {
 
 // App app
 type App struct {
-	tree        *DBTree
-	leftFlexBox *tview.Flex
-	selectDrop  *tview.DropDown
+	tree         *DBTree
+	leftFlexBox  *tview.Flex
+	rightFlexBox *tview.Flex
+	bottomPanel  tview.Primitive
+	selectDrop   *tview.DropDown
 
-	clients map[string]*DBTree
+	dbTree map[string]*DBTree
 }
 
 // NewApp new
 func NewApp() *App {
 	return &App{
-		clients: make(map[string]*DBTree),
+		dbTree: make(map[string]*DBTree),
 	}
 }
 
 // Run run
 func (a *App) Run(configs ...RedisConfig) {
 	a.selectDrop = a.createSelectDB(configs...)
-	a.tree = NewDBTree(a.createTree(""))
-
-	preview = NewPreview()
-	preview.SetDeleteFunc(a.tree.deleteKey)
-	preview.SetReloadFunc(a.tree.reloadSelectKey)
-	preview.SetRenameFunc(a.tree.renameSelectKey)
-
 	a.leftFlexBox = tview.NewFlex().SetDirection(tview.FlexRow)
-
-	bottomPanel := a.createBottom()
-	rightFlexBox := tview.NewFlex().SetDirection(tview.FlexRow).
-		AddItem(preview.flexBox, 0, 3, false).
-		AddItem(bottomPanel, 0, 1, false)
+	a.bottomPanel = a.createBottom()
+	a.rightFlexBox = tview.NewFlex().SetDirection(tview.FlexRow)
 
 	mainFlexBox := tview.NewFlex().SetDirection(tview.FlexColumn).
 		AddItem(a.leftFlexBox, 0, 1, true).
-		AddItem(rightFlexBox, 0, 4, false)
+		AddItem(a.rightFlexBox, 0, 4, false)
 
 	modal := a.createModal()
 
@@ -375,7 +373,7 @@ func (a *App) Run(configs ...RedisConfig) {
 		panic(err)
 	}
 
-	for _, client := range a.clients {
+	for _, client := range a.dbTree {
 		client.Close()
 	}
 }
@@ -383,13 +381,15 @@ func (a *App) Run(configs ...RedisConfig) {
 // Show show
 func (a *App) Show(config RedisConfig) {
 	address := fmt.Sprintf("%v:%v", config.Host, config.Port)
-	t, ok := a.clients[address]
+	t, ok := a.dbTree[address]
 	if !ok {
 		client := NewRedis(address, config.Auth)
 		data := NewData(client)
-		t = NewDBTree(a.createTree(""))
+		preview := NewPreview()
+		t = NewDBTree(a.createTree(""), preview)
 		t.SetData(config.Host, data)
-		a.clients[address] = t
+
+		a.dbTree[address] = t
 	}
 
 	a.tree = t
@@ -397,6 +397,10 @@ func (a *App) Show(config RedisConfig) {
 	a.leftFlexBox.Clear()
 	a.leftFlexBox.AddItem(a.selectDrop, 1, 0, false)
 	a.leftFlexBox.AddItem(a.tree.tree, 0, 1, true)
+
+	a.rightFlexBox.Clear()
+	a.rightFlexBox.AddItem(a.tree.preview.flexBox, 0, 3, false)
+	a.rightFlexBox.AddItem(a.bottomPanel, 0, 1, false)
 }
 
 func (a *App) createTree(rootName string) *tview.TreeView {
