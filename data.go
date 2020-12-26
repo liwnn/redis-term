@@ -164,3 +164,8 @@ func (d *Data) Reload(node *DataNode) {
 		node.removed = true
 	}
 }
+
+// Close close
+func (d *Data) Close() {
+	d.redis.Close()
+}

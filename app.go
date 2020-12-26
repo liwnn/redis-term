@@ -301,6 +301,11 @@ func (t *DBTree) deleteKey() {
 	})
 }
 
+// Close close
+func (t *DBTree) Close() {
+	t.data.Close()
+}
+
 // ShowModal show modal
 func ShowModal(text string, okFunc func()) {
 	modal.SetText(text).
@@ -332,7 +337,9 @@ type App struct {
 
 // NewApp new
 func NewApp() *App {
-	return &App{}
+	return &App{
+		clients: make(map[string]*DBTree),
+	}
 }
 
 // Run run
@@ -369,25 +376,27 @@ func (a *App) Run(configs ...RedisConfig) {
 	}
 
 	for _, client := range a.clients {
-		a.client.data.Close()
+		client.Close()
 	}
 }
 
 // Show show
 func (a *App) Show(config RedisConfig) {
 	address := fmt.Sprintf("%v:%v", config.Host, config.Port)
-	client, ok := clients[address]
+	t, ok := a.clients[address]
 	if !ok {
-		client = NewRedis(address, config.Auth)
-		clients[address] = client
+		client := NewRedis(address, config.Auth)
+		data := NewData(client)
+		t = NewDBTree(a.createTree(""))
+		t.SetData(config.Host, data)
+		a.clients[address] = t
 	}
+
+	a.tree = t
 
 	a.leftFlexBox.Clear()
 	a.leftFlexBox.AddItem(a.selectDrop, 1, 0, false)
 	a.leftFlexBox.AddItem(a.tree.tree, 0, 1, true)
-
-	data := NewData(client)
-	a.tree.SetData(config.Host, data)
 }
 
 func (a *App) createTree(rootName string) *tview.TreeView {
