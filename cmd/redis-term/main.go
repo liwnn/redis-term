@@ -27,12 +27,6 @@ func main() {
 			Port: port,
 			Auth: auth,
 		},
-		{
-			Name: "172.25.128.116:9898",
-			Host: "172.25.128.116",
-			Port: 9898,
-			Auth: "sanguo",
-		},
 	}
 
 	app := redisterm.NewApp()
