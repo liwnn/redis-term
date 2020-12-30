@@ -72,10 +72,14 @@ func (n *DataNode) AddChild(name, key string) *DataNode {
 		p:    n,
 	}
 	n.child = append(n.child, node)
-	if len(n.child) > 20 && len(n.childMap) == 0 {
-		n.childMap = make(map[string]*DataNode)
-		for _, v := range n.child {
-			n.childMap[v.key] = v
+	if len(n.child) > 20 {
+		if len(n.childMap) == 0 {
+			n.childMap = make(map[string]*DataNode)
+			for _, v := range n.child {
+				n.childMap[v.key] = v
+			}
+		} else {
+			n.childMap[node.key] = node
 		}
 	}
 
