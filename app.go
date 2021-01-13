@@ -329,10 +329,10 @@ func ShowModal(text string, okFunc func()) {
 
 // RedisConfig config
 type RedisConfig struct {
-	Name string
-	Host string
-	Port int
-	Auth string
+	Name string `json:"name"`
+	Host string `json:"host"`
+	Port int    `json:"port"`
+	Auth string `json:"auth"`
 }
 
 // App app
