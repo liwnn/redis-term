@@ -7,10 +7,16 @@ import (
 	"redisterm"
 )
 
+var config string
+
+func init() {
+	flag.StringVar(&config, "config", "./config.json", "config")
+}
+
 func main() {
 	flag.Parse()
 
-	b, err := ioutil.ReadFile("./config.json")
+	b, err := ioutil.ReadFile(config)
 	if err != nil {
 		panic(err)
 	}
