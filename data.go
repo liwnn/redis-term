@@ -62,14 +62,14 @@ func (d *Data) Cmd(w io.Writer, cmd string) error {
 		}
 		fmt.Fprint(w, v)
 	case redis.Err, redis.BulkStr, redis.SimpleStr:
-		fmt.Fprint(w, r.String())
+		fmt.Fprintln(w, r.String())
 	case redis.Array:
 		l, _ := r.List()
 		for _, v := range l {
 			fmt.Fprintln(w, v)
 		}
 	default:
-		fmt.Fprintf(w, "cmd no implement %v", r.Type())
+		fmt.Fprintf(w, "cmd no implement %v\n", r.Type())
 	}
 	return nil
 }

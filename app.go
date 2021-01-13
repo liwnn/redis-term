@@ -421,11 +421,11 @@ func (a *App) createTree(rootName string) *tview.TreeView {
 func (a *App) createSelectDB(configs ...RedisConfig) *tview.DropDown {
 	dbSel := tview.NewDropDown().SetLabel("Select server:")
 	for _, config := range configs {
-		t := config
-		dbSel.AddOption(t.Host, func() {
-			a.Show(t)
-		})
+		dbSel.AddOption(config.Host, nil)
 	}
+	dbSel.SetSelectedFunc(func(text string, index int) {
+		a.Show(configs[index])
+	})
 	return dbSel
 }
 
