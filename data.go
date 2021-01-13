@@ -2,7 +2,9 @@ package redisterm
 
 import (
 	"fmt"
+	"io"
 	"log"
+	"redisterm/redis"
 	"strconv"
 	"strings"
 )
@@ -42,6 +44,34 @@ func (d *Data) GetDatabases() []*DataNode {
 		r = append(r, v.root)
 	}
 	return r
+}
+
+// Cmd cmd
+func (d *Data) Cmd(w io.Writer, cmd string) error {
+	args := strings.Fields(cmd)
+	r, err := d.redis.client.Do(args...)
+	if err != nil {
+		return err
+	}
+
+	switch r.Type() {
+	case redis.Int:
+		v, err := r.Int()
+		if err != nil {
+			return err
+		}
+		fmt.Fprint(w, v)
+	case redis.Err, redis.BulkStr, redis.SimpleStr:
+		fmt.Fprint(w, r.String())
+	case redis.Array:
+		l, _ := r.List()
+		for _, v := range l {
+			fmt.Fprintln(w, v)
+		}
+	default:
+		fmt.Fprintf(w, "cmd no implement %v", r.Type())
+	}
+	return nil
 }
 
 // ScanAllKeys get all key

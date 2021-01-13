@@ -461,10 +461,28 @@ func (a *App) createBottom() tview.Primitive {
 	{
 		title := "redis-cli"
 		cmdLine := tview.NewInputField()
+		view := tview.NewTextView()
+
 		cmdLine.SetPlaceholder("input command")
 		cmdLine.SetFieldBackgroundColor(tcell.ColorDarkSlateGrey)
 		cmdLine.SetPlaceholderTextColor(tcell.ColorDimGrey)
-		view := tview.NewTextView()
+		cmdLine.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+			switch event.Key() {
+			case tcell.KeyEnter:
+				text := cmdLine.GetText()
+				cmdLine.SetText("")
+
+				fmt.Fprintf(view, "[#00aa00]redis%v> [blue]", a.tree.data.index)
+				fmt.Fprintln(view, text)
+				fmt.Fprintf(view, "[white]")
+				a.tree.data.Cmd(view, text)
+				view.ScrollToEnd()
+				return nil
+			}
+			return event
+		})
+
+		view.SetRegions(true).SetDynamicColors(true)
 		redisCli := tview.NewFlex().
 			SetDirection(tview.FlexRow).
 			AddItem(view, 0, 1, false).

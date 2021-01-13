@@ -3,6 +3,7 @@ package redis
 import (
 	"errors"
 	"fmt"
+	"strconv"
 )
 
 // Result reply
@@ -15,6 +16,11 @@ func NewResult(object *Object) *Result {
 	return &Result{
 		object: object,
 	}
+}
+
+// Type return type.
+func (r *Result) Type() Type {
+	return r.object.Type
 }
 
 // IsNil return if object is nil
@@ -64,6 +70,18 @@ func (r *Result) Byte() []byte {
 		return nil
 	}
 	return r.object.val.([]byte)
+}
+
+// Int return int
+func (r *Result) Int() (int, error) {
+	if r.object.Type != Int {
+		return 0, errors.New("not int typ")
+	}
+	v, ok := r.object.val.([]byte)
+	if !ok {
+		return 0, errors.New("not int")
+	}
+	return strconv.Atoi(string(v))
 }
 
 // ToArray to array
