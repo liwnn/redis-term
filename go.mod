@@ -3,7 +3,10 @@ module redisterm
 go 1.13
 
 require (
-	github.com/gdamore/tcell/v2 v2.1.0
-	github.com/rivo/tview v0.0.0-20210117162420-745e4ceeb711
-	golang.org/x/sys v0.0.0-20210122093101-04d7465088b8 // indirect
+	github.com/gdamore/tcell/v2 v2.2.1
+	github.com/mattn/go-runewidth v0.0.12 // indirect
+	github.com/rivo/tview v0.0.0-20210312174852-ae9464cc3598
+	golang.org/x/sys v0.0.0-20210419170143-37df388d1f33 // indirect
+	golang.org/x/term v0.0.0-20210406210042-72f3dc4e9b72 // indirect
+	golang.org/x/text v0.3.6 // indirect
 )
