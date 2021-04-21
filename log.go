@@ -1,22 +1,21 @@
 package redisterm
 
 import (
-	"fmt"
 	"io"
+	"log"
 	"os"
 )
 
 var (
-	global io.Writer = os.Stdout
+	global = log.New(os.Stderr, "", log.LstdFlags)
 )
 
 // SetLogger set output
 func SetLogger(logger io.Writer) {
-	global = logger
+	global.SetOutput(logger)
 }
 
 // Log log
 func Log(format string, params ...interface{}) {
-	fmt.Fprintf(global, format, params...)
-	fmt.Fprintln(global)
+	global.Printf(format, params...)
 }
