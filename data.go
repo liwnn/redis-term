@@ -150,6 +150,8 @@ func (d *Data) GetValue(key string) interface{} {
 		return d.redis.GetKV(key)
 	case "set":
 		return d.redis.GetSet(key)
+	case "list":
+		return d.redis.GetList(key)
 	case "none":
 		return nil
 	default:
