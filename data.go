@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"redisterm/redis"
 	"strconv"
 	"strings"
+	
+	"redisterm/redis"
 )
 
 // Data data

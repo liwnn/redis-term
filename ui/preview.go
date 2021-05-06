@@ -1,4 +1,4 @@
-package redisterm
+package ui
 
 import (
 	"fmt"
@@ -8,8 +8,41 @@ import (
 	"github.com/rivo/tview"
 )
 
-type page struct {
-	data interface{}
+// Page .
+type Page interface{}
+
+// PageText show text
+type PageText struct {
+	Text string
+}
+
+// NewPageText new
+func NewPageText(text string) Page {
+	return &PageText{
+		Text: text,
+	}
+}
+
+// PageTableTitle title
+type PageTableTitle struct {
+	Name      string
+	Expansion int
+}
+
+// PageTable show table
+type PageTable struct {
+	title  []PageTableTitle
+	rows   [][]string
+	offset int
+}
+
+// NewPageTable new
+func NewPageTable(title []PageTableTitle, rows [][]string, offset int) Page {
+	return &PageTable{
+		title:  title,
+		rows:   rows,
+		offset: offset,
+	}
 }
 
 // Preview preview
@@ -29,9 +62,8 @@ type Preview struct {
 	nextBtn   *tview.Button
 	numView   *tview.TextView
 
-	pages     []page
-	pageDelta int
-	curPage   int
+	pages   []Page
+	curPage int
 }
 
 // NewPreview new
@@ -92,7 +124,6 @@ func NewPreview() *Preview {
 		textView:  previewText,
 		table:     previewTable,
 		showFlex:  showFlex,
-		pageDelta: 1000,
 		sizeText:  sizeText,
 		delBtn:    delBtn,
 		reloadBtn: reloadBtn,
@@ -109,78 +140,50 @@ func NewPreview() *Preview {
 	return p
 }
 
+func (p *Preview) FlexBox() *tview.Flex {
+	return p.flexBox
+}
+
 func (p *Preview) init() {
 	p.table.SetSelectionChangedFunc(func(row, column int) {
-		Log("Preview Update List sel row[%v] column[%v]", row, column)
 		if row <= 0 {
 			return
 		}
 		page := p.pages[p.curPage]
 		var size int
-		switch page.data.(type) {
-		case []KVText:
-			h := page.data.([]KVText)
+		switch page.(type) {
+		case (*PageTable):
+			lt := page.(*PageTable)
+			h := lt.rows
 			if row-1 >= len(h) {
 				return
 			}
-			size = len(h[row-1].Value)
-		case []string:
-			h := page.data.([]string)
-			if row-1 >= len(h) {
-				return
-			}
-			size = len(h[row-1])
+			c := h[row-1]
+			size = len(c[len(c)-1])
 		}
-		p.setSizeText(fmt.Sprintf("Size: %d bytes", size))
+		p.SetSizeText(fmt.Sprintf("Size: %d bytes", size))
 	})
 }
 
-// SetContent set
-func (p *Preview) SetContent(o interface{}, valid bool) {
-	var count int
-	p.setSizeText("")
+// AddPage add page
+func (p *Preview) AddPage(page Page) {
+	p.pages = append(p.pages, page)
+}
+
+// Clear all
+func (p *Preview) Clear() {
 	p.pages = p.pages[:0]
-	switch o.(type) {
-	case string:
-		p.pages = append(p.pages, page{
-			data: o,
-		})
-		text := o.(string)
-		if valid {
-			p.setSizeText(fmt.Sprintf("Size: %d bytes", len(text)))
-		}
-	case []KVText:
-		h := o.([]KVText)
-		count = len(h)
-		pageCount := len(h) / p.pageDelta
-		if len(h)%p.pageDelta > 0 {
-			pageCount++
-		}
-		for i := 0; i < pageCount-1; i++ {
-			p.pages = append(p.pages, page{
-				data: h[i*p.pageDelta : (i+1)*p.pageDelta],
-			})
-		}
-		p.pages = append(p.pages, page{
-			data: h[(pageCount-1)*p.pageDelta:],
-		})
-	case []string:
-		h := o.([]string)
-		count = len(h)
-		pageCount := len(h) / p.pageDelta
-		if len(h)%p.pageDelta > 0 {
-			pageCount++
-		}
-		for i := 0; i < (pageCount - 1); i++ {
-			p.pages = append(p.pages, page{
-				data: h[i*p.pageDelta : (i+1)*p.pageDelta],
-			})
-		}
-		p.pages = append(p.pages, page{
-			data: h[(pageCount-1)*p.pageDelta:],
-		})
-	}
+	p.SetSizeText("")
+}
+
+// SetContent set
+func (p *Preview) SetContent(count int) {
 	p.Update(0)
+	p.updatePageBtn()
+	p.updateNumView(count)
+}
+
+func (p *Preview) updatePageBtn() {
 	if len(p.pages) > 1 {
 		p.grid.AddItem(p.nextBtn, 0, 7, 1, 1, 0, 0, false)
 		p.grid.AddItem(p.prevBtn, 0, 6, 1, 1, 0, 0, false) // 0行1列,占用1行1列(2则向后占一列)
@@ -188,7 +191,9 @@ func (p *Preview) SetContent(o interface{}, valid bool) {
 		p.grid.RemoveItem(p.nextBtn)
 		p.grid.RemoveItem(p.prevBtn)
 	}
+}
 
+func (p *Preview) updateNumView(count int) {
 	if count > 0 {
 		p.numView.SetText("Count:" + strconv.Itoa(count))
 		p.grid.AddItem(p.numView, 0, 5, 1, 1, 0, 0, false)
@@ -197,7 +202,8 @@ func (p *Preview) SetContent(o interface{}, valid bool) {
 	}
 }
 
-func (p *Preview) setSizeText(text string) {
+// SetSizeText show text size
+func (p *Preview) SetSizeText(text string) {
 	p.sizeText.SetText(text)
 }
 
@@ -234,7 +240,7 @@ func (p *Preview) SetKey(text string) {
 	}
 }
 
-// Getkey return key
+// GetKey return key
 func (p *Preview) GetKey() string {
 	return p.keyInput.GetText()
 }
@@ -267,56 +273,38 @@ func (p *Preview) prevPage() {
 func (p *Preview) Update(pageNum int) {
 	p.curPage = pageNum
 	page := p.pages[p.curPage]
-	o := page.data
-	switch o.(type) {
-	case string:
+	switch page.(type) {
+	case *PageText:
 		p.showFlex.Clear()
 		p.showFlex.AddItem(p.textView, 0, 1, false)
-		text := o.(string)
+		pt := page.(*PageText)
+		text := pt.Text
 		if len(text) > 8192 {
 			text = text[:8192] + "..."
 			p.textView.SetText(text)
 		} else {
 			p.textView.SetText(text)
 		}
-	case []KVText:
+	case *PageTable:
+		pt := page.(*PageTable)
+
 		p.showFlex.Clear()
 		p.showFlex.AddItem(p.table, 0, 1, false)
-		h := o.([]KVText)
 		p.table.Clear()
-		p.table.SetCell(0, 0, tview.NewTableCell("row").SetExpansion(1).SetSelectable(false).SetTextColor(tcell.ColorYellow))
-		p.table.SetCell(0, 1, tview.NewTableCell("key").SetExpansion(3).SetSelectable(false).SetTextColor(tcell.ColorYellow))
-		p.table.SetCell(0, 2, tview.NewTableCell("value").SetExpansion(24).SetSelectable(false).SetTextColor(tcell.ColorYellow))
-		p.table.Select(1, 1)
-		p.table.ScrollToBeginning()
-
-		for i, kv := range h {
-			index := p.curPage*p.pageDelta + i + 1
-			p.table.SetCell(i+1, 0, tview.NewTableCell(strconv.Itoa(index)))
-			p.table.SetCell(i+1, 1, tview.NewTableCell(kv.Key))
-			if len(kv.Value) > 1024 {
-				p.table.SetCell(i+1, 2, tview.NewTableCell(kv.Value[:1024]+"..."))
-			} else {
-				p.table.SetCell(i+1, 2, tview.NewTableCell(kv.Value))
-			}
+		for i, v := range pt.title {
+			p.table.SetCell(0, i, tview.NewTableCell(v.Name).SetExpansion(v.Expansion).SetSelectable(false).SetTextColor(tcell.ColorYellow))
 		}
-	case []string:
-		p.showFlex.Clear()
-		p.showFlex.AddItem(p.table, 0, 1, false)
-		h := o.([]string)
-		p.table.Clear()
-		p.table.SetCell(0, 0, tview.NewTableCell("row").SetExpansion(1).SetSelectable(false).SetTextColor(tcell.ColorYellow))
-		p.table.SetCell(0, 1, tview.NewTableCell("value").SetExpansion(20).SetSelectable(false).SetTextColor(tcell.ColorYellow))
 		p.table.Select(1, 1)
 		p.table.ScrollToBeginning()
 
-		for i, v := range h {
-			index := p.curPage*p.pageDelta + i + 1
+		for i, row := range pt.rows {
+			index := pt.offset + i
 			p.table.SetCell(i+1, 0, tview.NewTableCell(strconv.Itoa(index)))
-			if len(v) > 1024 {
-				p.table.SetCell(i+1, 1, tview.NewTableCell(v[:1024]+"..."))
-			} else {
-				p.table.SetCell(i+1, 1, tview.NewTableCell(v))
+			for j, c := range row {
+				if len(c) > 1024 {
+					c = c[:1024]
+				}
+				p.table.SetCell(i+1, j+1, tview.NewTableCell(c))
 			}
 		}
 	}

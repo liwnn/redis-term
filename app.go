@@ -7,6 +7,8 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
+
+	"redisterm/ui"
 )
 
 var (
@@ -26,24 +28,32 @@ type DBTree struct {
 	tree     *tview.TreeView
 	data     *Data
 	lastNode *tview.TreeNode
-	preview  *Preview
+	preview  *ui.Preview
+
+	pageDelta int
 }
 
 // NewDBTree new
-func NewDBTree(tree *tview.TreeView, preview *Preview) *DBTree {
+func NewDBTree(tree *tview.TreeView, preview *ui.Preview) *DBTree {
 	dbTree := &DBTree{
-		tree:    tree,
-		preview: preview,
+		tree:      tree,
+		preview:   preview,
+		pageDelta: 1000,
 	}
 
 	tree.SetSelectedFunc(dbTree.OnSelected)
 	tree.SetChangedFunc(dbTree.OnChanged)
+	tree.SetMouseCapture(dbTree.onCapture)
 
 	preview.SetDeleteFunc(dbTree.deleteKey)
 	preview.SetReloadFunc(dbTree.reloadSelectKey)
 	preview.SetRenameFunc(dbTree.renameSelectKey)
 
 	return dbTree
+}
+
+func (t *DBTree) onCapture(action tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
+	return action, event
 }
 
 // SetData change db data.
@@ -164,9 +174,9 @@ func (t *DBTree) OnChanged(node *tview.TreeNode) {
 			begin := time.Now()
 			o := t.data.GetValue(typ.Data.key)
 			Log("redis value time cost %v", time.Since(begin))
-			t.preview.SetContent(o, true)
+			t.updatePreview(o, true)
 		} else {
-			t.preview.SetContent(fmt.Sprintf("%v was removed", typ.Data.key), false)
+			t.updatePreview(fmt.Sprintf("%v was removed", typ.Data.key), false)
 		}
 		t.preview.SetDeleteText("Delete")
 		t.preview.SetKey(typ.Data.key)
@@ -176,9 +186,102 @@ func (t *DBTree) OnChanged(node *tview.TreeNode) {
 		} else {
 			t.preview.SetDeleteText("Delete")
 		}
-		t.preview.SetContent("", false)
+		t.updatePreview("", false)
 		t.preview.SetKey("")
 	}
+}
+
+func (t *DBTree) updatePreview(o interface{}, valid bool) {
+	p := t.preview
+	p.Clear()
+
+	var count int
+	switch o.(type) {
+	case string:
+		text := o.(string)
+		page := ui.NewPageText(text)
+		p.AddPage(page)
+		if valid {
+			p.SetSizeText(fmt.Sprintf("Size: %d bytes", len(text)))
+		}
+	case []string:
+		h := o.([]string)
+		count = len(h)
+		pageCount := len(h) / t.pageDelta
+		if len(h)%t.pageDelta > 0 {
+			pageCount++
+		}
+		title := []ui.PageTableTitle{
+			{
+				Name:      "row",
+				Expansion: 1,
+			},
+			{
+				Name:      "value",
+				Expansion: 20,
+			},
+		}
+		for i := 0; i < (pageCount - 1); i++ {
+			rowData := h[i*t.pageDelta : (i+1)*t.pageDelta]
+			var rows = make([][]string, 0, len(rowData))
+			for _, data := range rowData {
+				rows = append(rows, []string{data})
+			}
+			offset := i*t.pageDelta + 1
+			page := ui.NewPageTable(title, rows, offset)
+			p.AddPage(page)
+		}
+		rowData := h[(pageCount-1)*t.pageDelta:]
+		var rows = make([][]string, 0, len(rowData))
+		for _, data := range rowData {
+			rows = append(rows, []string{data})
+		}
+		offset := (pageCount-1)*t.pageDelta + 1
+		page := ui.NewPageTable(title, rows, offset)
+		p.AddPage(page)
+	case []KVText:
+		h := o.([]KVText)
+		count = len(h)
+		pageCount := len(h) / t.pageDelta
+		if len(h)%t.pageDelta > 0 {
+			pageCount++
+		}
+		title := []ui.PageTableTitle{
+			{
+				Name:      "row",
+				Expansion: 1,
+			},
+			{
+				Name:      "key",
+				Expansion: 3,
+			},
+			{
+				Name:      "value",
+				Expansion: 24,
+			},
+		}
+		for i := 0; i < pageCount-1; i++ {
+			rowData := h[i*t.pageDelta : (i+1)*t.pageDelta]
+			var rows = make([][]string, 0, len(rowData))
+			for _, data := range rowData {
+				rows = append(rows, []string{data.Key, data.Value})
+			}
+
+			offset := i*t.pageDelta + 1
+			page := ui.NewPageTable(title, rows, offset)
+			p.AddPage(page)
+		}
+		rowData := h[(pageCount-1)*t.pageDelta:]
+		var rows = make([][]string, 0, len(rowData))
+		for _, data := range rowData {
+			rows = append(rows, []string{data.Key, data.Value})
+		}
+		offset := (pageCount-1)*t.pageDelta + 1
+		page := ui.NewPageTable(title, rows, offset)
+		p.AddPage(page)
+	}
+
+	p.SetContent(count)
 }
 
 func (t *DBTree) getReference(node *tview.TreeNode) *Reference {
@@ -208,7 +311,7 @@ func (t *DBTree) deleteSelectKey(typ *Reference) {
 		t.data.Delete(typ.Data)
 		t.getCurrentNode().SetText(typ.Data.key + " (Removed)")
 		t.getCurrentNode().SetColor(tcell.ColorGray)
-		t.preview.SetContent(fmt.Sprintf("%v was removed", typ.Data.key), false)
+		t.updatePreview(fmt.Sprintf("%v was removed", typ.Data.key), false)
 	case "index":
 		t.data.FlushDB(typ.Data)
 		t.getCurrentNode().ClearChildren()
@@ -218,7 +321,7 @@ func (t *DBTree) deleteSelectKey(typ *Reference) {
 		t.getCurrentNode().SetText(typ.Data.name + " (Removed)")
 		t.getCurrentNode().SetColor(tcell.ColorGray)
 		t.getCurrentNode().ClearChildren()
-		t.preview.SetContent("", false)
+		t.updatePreview("", false)
 	default:
 		Log("delete %v not implement", typ.Name)
 	}
@@ -258,10 +361,10 @@ func (t *DBTree) reloadSelectKey() {
 		if o == nil {
 			reference.Data.removed = true
 			t.getCurrentNode().SetText(reference.Data.name + " (Removed)")
-			t.preview.SetContent(fmt.Sprintf("%v was removed", reference.Data.key), false)
+			t.updatePreview(fmt.Sprintf("%v was removed", reference.Data.key), false)
 			t.preview.SetDeleteText("Delete")
 		} else {
-			t.preview.SetContent(o, true)
+			t.updatePreview(o, true)
 		}
 		return
 	}
@@ -388,7 +491,7 @@ func (a *App) Show(config RedisConfig) {
 	if !ok {
 		client := NewRedis(address, config.Auth)
 		data := NewData(client)
-		preview := NewPreview()
+		preview := ui.NewPreview()
 		t = NewDBTree(a.createTree(""), preview)
 		t.SetData(config.Host, data)
 
@@ -402,7 +505,7 @@ func (a *App) Show(config RedisConfig) {
 	a.leftFlexBox.AddItem(a.tree.tree, 0, 1, true)
 
 	a.rightFlexBox.Clear()
-	a.rightFlexBox.AddItem(a.tree.preview.flexBox, 0, 3, false)
+	a.rightFlexBox.AddItem(a.tree.preview.FlexBox(), 0, 3, false)
 	a.rightFlexBox.AddItem(a.bottomPanel, 0, 1, false)
 }
 
