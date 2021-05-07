@@ -12,8 +12,7 @@ import (
 )
 
 var (
-	pages *tview.Pages
-	modal *tview.Modal
+	main *ui.MainView
 )
 
 // Reference referenct
@@ -297,7 +296,7 @@ func (t *DBTree) renameSelectKey() {
 	}
 
 	notice := fmt.Sprintf("Rename %v->%v", reference.Data.key, t.preview.GetKey())
-	ShowModal(notice, func() {
+	main.ShowModal(notice, func() {
 		if reference.Data.key == t.preview.GetKey() {
 			return
 		}
@@ -367,7 +366,7 @@ func (t *DBTree) deleteKey() {
 	case "dir":
 		notice = "Delete " + typ.Data.key + "* ?"
 	}
-	ShowModal(notice, func() {
+	main.ShowModal(notice, func() {
 		t.deleteSelectKey(typ)
 	})
 }
@@ -375,18 +374,6 @@ func (t *DBTree) deleteKey() {
 // Close close
 func (t *DBTree) Close() {
 	t.data.Close()
-}
-
-// ShowModal show modal
-func ShowModal(text string, okFunc func()) {
-	modal.SetText(text).
-		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
-			if buttonIndex == 0 {
-				okFunc()
-			}
-			pages.HidePage("modal")
-		})
-	pages.ShowPage("modal")
 }
 
 // RedisConfig config
@@ -399,13 +386,11 @@ type RedisConfig struct {
 
 // App app
 type App struct {
-	tree         *DBTree
-	leftFlexBox  *tview.Flex
-	rightFlexBox *tview.Flex
-	bottomPanel  tview.Primitive
-	selectDrop   *tview.DropDown
+	tree *DBTree
 
 	dbTree map[string]*DBTree
+
+	configs []RedisConfig
 }
 
 // NewApp new
@@ -417,24 +402,19 @@ func NewApp() *App {
 
 // Run run
 func (a *App) Run(configs ...RedisConfig) {
-	a.selectDrop = a.createSelectDB(configs...)
-	a.leftFlexBox = tview.NewFlex().SetDirection(tview.FlexRow)
-	a.bottomPanel = a.createBottom()
-	a.rightFlexBox = tview.NewFlex().SetDirection(tview.FlexRow)
+	a.configs = configs
 
-	mainFlexBox := tview.NewFlex().SetDirection(tview.FlexColumn).
-		AddItem(a.leftFlexBox, 0, 1, true).
-		AddItem(a.rightFlexBox, 0, 4, false)
+	for _, config := range a.configs {
+		main.AddSelect(config.Host)
+	}
+	main.SetSelectedFunc(func(index int) {
+		a.Show(a.configs[index])
+	})
+	SetLogger(main.GetOutput())
+	main.Show(0)
+	main.SetCmdLineEnter(a.onCmdLineEnter)
 
-	modal := a.createModal()
-
-	pages = tview.NewPages()
-	pages.AddPage("main", mainFlexBox, true, true)
-	pages.AddPage("modal", modal, true, false)
-
-	a.selectDrop.SetCurrentOption(0)
-
-	if err := tview.NewApplication().SetRoot(pages, true).EnableMouse(true).Run(); err != nil {
+	if err := main.Run(); err != nil {
 		panic(err)
 	}
 
@@ -464,95 +444,11 @@ func (a *App) Show(config RedisConfig) {
 	}
 
 	a.tree = t
-
-	a.leftFlexBox.Clear()
-	a.leftFlexBox.AddItem(a.selectDrop, 1, 0, false)
-	a.leftFlexBox.AddItem(a.tree.tree, 0, 1, true)
-
-	a.rightFlexBox.Clear()
-	a.rightFlexBox.AddItem(a.tree.preview.FlexBox(), 0, 3, false)
-	a.rightFlexBox.AddItem(a.bottomPanel, 0, 1, false)
 }
 
-func (a *App) createSelectDB(configs ...RedisConfig) *tview.DropDown {
-	dbSel := tview.NewDropDown().SetLabel("Select server:")
-	for _, config := range configs {
-		dbSel.AddOption(config.Host, nil)
-	}
-	dbSel.SetSelectedFunc(func(text string, index int) {
-		a.Show(configs[index])
-	})
-	return dbSel
-}
-
-func (a *App) createModal() *tview.Modal {
-	modal = tview.NewModal().
-		AddButtons([]string{"Ok", "Cancel"})
-	return modal
-}
-
-func (a *App) createBottom() tview.Primitive {
-	pages := tview.NewPages()
-
-	info := tview.NewTextView().
-		SetDynamicColors(true).
-		SetRegions(true).
-		SetWrap(false).
-		SetHighlightedFunc(func(added, removed, remaining []string) {
-			pages.SwitchToPage(added[0])
-		})
-
-	{
-		title := "CONSOLE"
-		console := tview.NewTextView()
-		console.
-			SetScrollable(true).
-			SetTitle(title).
-			SetBorder(true)
-		SetLogger(console)
-		pages.AddPage(title, console, true, true)
-		fmt.Fprintf(info, `["%v"][slategrey]%s[white][""] `, title, title)
-	}
-
-	{
-		title := "redis-cli"
-		cmdLine := tview.NewInputField()
-		view := tview.NewTextView()
-
-		cmdLine.SetPlaceholder("input command")
-		cmdLine.SetFieldBackgroundColor(tcell.ColorDarkSlateGrey)
-		cmdLine.SetPlaceholderTextColor(tcell.ColorDimGrey)
-		cmdLine.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-			switch event.Key() {
-			case tcell.KeyEnter:
-				text := cmdLine.GetText()
-				cmdLine.SetText("")
-
-				fmt.Fprintf(view, "[#00aa00]redis%v> [blue]", a.tree.data.index)
-				fmt.Fprintln(view, text)
-				fmt.Fprintf(view, "[white]")
-				a.tree.data.Cmd(view, text)
-				view.ScrollToEnd()
-				return nil
-			}
-			return event
-		})
-
-		view.SetRegions(true).SetDynamicColors(true)
-		redisCli := tview.NewFlex().
-			SetDirection(tview.FlexRow).
-			AddItem(view, 0, 1, false).
-			AddItem(cmdLine, 1, 1, true)
-		redisCli.SetBorder(true)
-		pages.AddPage(title, redisCli, true, false)
-		fmt.Fprintf(info, `["%v"][slategrey]%s[white][""] `, title, title)
-	}
-
-	info.Highlight("CONSOLE")
-
-	layout := tview.NewFlex().
-		SetDirection(tview.FlexRow).
-		AddItem(pages, 0, 1, false).
-		AddItem(info, 1, 1, false)
-	return layout
+func (a *App) onCmdLineEnter(text string) {
+	fmt.Fprintf(view, "[#00aa00]redis%v> [blue]", a.tree.data.index)
+	fmt.Fprintln(view, text)
+	fmt.Fprintf(view, "[white]")
+	a.tree.data.Cmd(view, text)
 }
