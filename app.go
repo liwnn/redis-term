@@ -25,16 +25,16 @@ type Reference struct {
 
 // DBTree tree.
 type DBTree struct {
-	tree     *tview.TreeView
-	data     *Data
-	lastNode *tview.TreeNode
-	preview  *ui.Preview
+	tree    *ui.Tree
+	preview *ui.Preview
+
+	data *Data
 
 	pageDelta int
 }
 
 // NewDBTree new
-func NewDBTree(tree *tview.TreeView, preview *ui.Preview) *DBTree {
+func NewDBTree(tree *ui.Tree, preview *ui.Preview) *DBTree {
 	dbTree := &DBTree{
 		tree:      tree,
 		preview:   preview,
@@ -63,35 +63,19 @@ func (t *DBTree) SetData(name string, data *Data) {
 	t.data = data
 }
 
-// AddNode add node
-func (t *DBTree) AddNode(target *tview.TreeNode, name string, reference *Reference) {
-	node := tview.NewTreeNode(name).SetSelectable(true)
-	if reference != nil {
-		node.SetReference(reference)
-	}
-	node.SetColor(tcell.ColorGreen)
-	target.AddChild(node)
-}
-
 // OnSelected on select
 func (t *DBTree) OnSelected(node *tview.TreeNode) {
-	reference := node.GetReference()
-	if reference == nil {
-		return
-	}
-	typ, ok := reference.(*Reference)
-	if !ok {
-		log.Fatalf("reference \n")
-	}
+	typ := t.getReference(node)
 	Log("OnSelected: %v %v", typ.Name, typ.Index)
 
 	t.data.Select(typ.Index)
 	childen := node.GetChildren()
 	if len(childen) == 0 {
+		var dataNodes []*DataNode
 		switch typ.Name {
 		case "db":
 			for i, dataNode := range t.data.GetDatabases() {
-				t.AddNode(node, dataNode.name, &Reference{
+				t.tree.AddNode(dataNode.name, &Reference{
 					Name:  "index",
 					Index: i,
 					Data:  dataNode,
@@ -99,51 +83,27 @@ func (t *DBTree) OnSelected(node *tview.TreeNode) {
 			}
 		case "index":
 			//dataNodes := t.data.GetKeys()
-			dataNodes := t.data.ScanAllKeys()
-			for _, dataNode := range dataNodes {
-				r := &Reference{
-					Index: typ.Index,
-					Data:  dataNode,
-				}
-				if dataNode.CanExpand() {
-					r.Name = "dir"
-					t.AddNode(node, "▶ "+dataNode.name, r)
-				} else {
-					r.Name = "key"
-					t.AddNode(node, dataNode.name, r)
-				}
-			}
+			dataNodes = t.data.ScanAllKeys()
 		case "dir":
-			dataNodes := t.data.GetChildren(typ.Data)
-			for _, dataNode := range dataNodes {
-				r := &Reference{
-					Index: typ.Index,
-					Data:  dataNode,
-				}
-				if dataNode.CanExpand() {
-					r.Name = "dir"
-					t.AddNode(node, "▶ "+dataNode.name, r)
-				} else {
-					r.Name = "key"
-					t.AddNode(node, dataNode.name, r)
-				}
+			dataNodes = t.data.GetChildren(typ.Data)
+		}
+		for _, dataNode := range dataNodes {
+			r := &Reference{
+				Index: typ.Index,
+				Data:  dataNode,
+			}
+			if dataNode.CanExpand() {
+				r.Name = "dir"
+				t.tree.AddNode("▶ "+dataNode.name, r)
+			} else {
+				r.Name = "key"
+				t.tree.AddNode(dataNode.name, r)
 			}
 		}
-	} else {
-		if t.tree.GetCurrentNode() != t.lastNode && node.IsExpanded() {
-			t.lastNode = node
-			return
-		}
-		node.SetExpanded(!node.IsExpanded())
 	}
 	if typ.Data != nil && typ.Data.CanExpand() {
-		if node.IsExpanded() {
-			node.SetText("▼ " + typ.Data.name)
-		} else {
-			node.SetText("▶ " + typ.Data.name)
-		}
+		t.tree.SetNodeText(typ.Data.name)
 	}
-	t.lastNode = node
 }
 
 // OnChanged on change
@@ -372,7 +332,6 @@ func (t *DBTree) reloadSelectKey() {
 	t.getCurrentNode().ClearChildren()
 	t.data.Reload(reference.Data)
 
-	node := t.getCurrentNode()
 	childen := reference.Data.GetChildren()
 	for _, dataNode := range childen {
 		r := &Reference{
@@ -381,10 +340,10 @@ func (t *DBTree) reloadSelectKey() {
 		}
 		if dataNode.CanExpand() {
 			r.Name = "dir"
-			t.AddNode(node, "▶ "+dataNode.name, r)
+			t.tree.AddNode("▶ "+dataNode.name, r)
 		} else {
 			r.Name = "key"
-			t.AddNode(node, dataNode.name, r)
+			t.tree.AddNode(dataNode.name, r)
 		}
 	}
 
@@ -492,7 +451,13 @@ func (a *App) Show(config RedisConfig) {
 		client := NewRedis(address, config.Auth)
 		data := NewData(client)
 		preview := ui.NewPreview()
-		t = NewDBTree(a.createTree(""), preview)
+
+		tree := ui.NewTree("")
+		tree.GetRoot().SetReference(&Reference{
+			Name: "db",
+		})
+
+		t = NewDBTree(tree, preview)
 		t.SetData(config.Host, data)
 
 		a.dbTree[address] = t
@@ -507,18 +472,6 @@ func (a *App) Show(config RedisConfig) {
 	a.rightFlexBox.Clear()
 	a.rightFlexBox.AddItem(a.tree.preview.FlexBox(), 0, 3, false)
 	a.rightFlexBox.AddItem(a.bottomPanel, 0, 1, false)
-}
-
-func (a *App) createTree(rootName string) *tview.TreeView {
-	root := tview.NewTreeNode(rootName).SetColor(tcell.ColorYellow)
-	root.SetReference(&Reference{
-		Name: "db",
-	})
-	tree := tview.NewTreeView().SetRoot(root).SetCurrentNode(root)
-	tree.SetBorder(true)
-	tree.SetTitle("KEYS")
-
-	return tree
 }
 
 func (a *App) createSelectDB(configs ...RedisConfig) *tview.DropDown {
