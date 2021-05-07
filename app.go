@@ -199,7 +199,7 @@ func (t *DBTree) updatePreview(o interface{}, valid bool) {
 	switch o.(type) {
 	case string:
 		text := o.(string)
-		page := ui.NewPageText(text)
+		page := ui.NewTextPage(text)
 		p.AddPage(page)
 		if valid {
 			p.SetSizeText(fmt.Sprintf("Size: %d bytes", len(text)))
@@ -211,7 +211,7 @@ func (t *DBTree) updatePreview(o interface{}, valid bool) {
 		if len(h)%t.pageDelta > 0 {
 			pageCount++
 		}
-		title := []ui.PageTableTitle{
+		title := []ui.TablePageTitle{
 			{
 				Name:      "row",
 				Expansion: 1,
@@ -228,7 +228,7 @@ func (t *DBTree) updatePreview(o interface{}, valid bool) {
 				rows = append(rows, []string{data})
 			}
 			offset := i*t.pageDelta + 1
-			page := ui.NewPageTable(title, rows, offset)
+			page := ui.NewTablePage(title, rows, offset)
 			p.AddPage(page)
 		}
 		rowData := h[(pageCount-1)*t.pageDelta:]
@@ -237,7 +237,7 @@ func (t *DBTree) updatePreview(o interface{}, valid bool) {
 			rows = append(rows, []string{data})
 		}
 		offset := (pageCount-1)*t.pageDelta + 1
-		page := ui.NewPageTable(title, rows, offset)
+		page := ui.NewTablePage(title, rows, offset)
 		p.AddPage(page)
 	case []KVText:
 		h := o.([]KVText)
@@ -246,7 +246,7 @@ func (t *DBTree) updatePreview(o interface{}, valid bool) {
 		if len(h)%t.pageDelta > 0 {
 			pageCount++
 		}
-		title := []ui.PageTableTitle{
+		title := []ui.TablePageTitle{
 			{
 				Name:      "row",
 				Expansion: 1,
@@ -268,7 +268,7 @@ func (t *DBTree) updatePreview(o interface{}, valid bool) {
 			}
 
 			offset := i*t.pageDelta + 1
-			page := ui.NewPageTable(title, rows, offset)
+			page := ui.NewTablePage(title, rows, offset)
 			p.AddPage(page)
 		}
 		rowData := h[(pageCount-1)*t.pageDelta:]
@@ -277,7 +277,7 @@ func (t *DBTree) updatePreview(o interface{}, valid bool) {
 			rows = append(rows, []string{data.Key, data.Value})
 		}
 		offset := (pageCount-1)*t.pageDelta + 1
-		page := ui.NewPageTable(title, rows, offset)
+		page := ui.NewTablePage(title, rows, offset)
 		p.AddPage(page)
 	}
 

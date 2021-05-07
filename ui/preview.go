@@ -13,32 +13,32 @@ type Page interface{}
 
 // PageText show text
 type PageText struct {
-	Text string
+	text string
 }
 
-// NewPageText new
-func NewPageText(text string) Page {
+// NewTextPage new
+func NewTextPage(text string) Page {
 	return &PageText{
-		Text: text,
+		text: text,
 	}
 }
 
-// PageTableTitle title
-type PageTableTitle struct {
+// TablePageTitle title
+type TablePageTitle struct {
 	Name      string
 	Expansion int
 }
 
-// PageTable show table
-type PageTable struct {
-	title  []PageTableTitle
+// TablePage show table
+type TablePage struct {
+	title  []TablePageTitle
 	rows   [][]string
 	offset int
 }
 
-// NewPageTable new
-func NewPageTable(title []PageTableTitle, rows [][]string, offset int) Page {
-	return &PageTable{
+// NewTablePage new
+func NewTablePage(title []TablePageTitle, rows [][]string, offset int) Page {
+	return &TablePage{
 		title:  title,
 		rows:   rows,
 		offset: offset,
@@ -151,15 +151,15 @@ func (p *Preview) init() {
 		}
 		page := p.pages[p.curPage]
 		var size int
-		switch page.(type) {
-		case (*PageTable):
-			lt := page.(*PageTable)
+		switch lt := page.(type) {
+		case (*TablePage):
 			h := lt.rows
 			if row-1 >= len(h) {
 				return
 			}
 			c := h[row-1]
 			size = len(c[len(c)-1])
+		default:
 		}
 		p.SetSizeText(fmt.Sprintf("Size: %d bytes", size))
 	})
@@ -273,21 +273,18 @@ func (p *Preview) prevPage() {
 func (p *Preview) Update(pageNum int) {
 	p.curPage = pageNum
 	page := p.pages[p.curPage]
-	switch page.(type) {
+	switch pt := page.(type) {
 	case *PageText:
 		p.showFlex.Clear()
 		p.showFlex.AddItem(p.textView, 0, 1, false)
-		pt := page.(*PageText)
-		text := pt.Text
+		text := pt.text
 		if len(text) > 8192 {
 			text = text[:8192] + "..."
 			p.textView.SetText(text)
 		} else {
 			p.textView.SetText(text)
 		}
-	case *PageTable:
-		pt := page.(*PageTable)
-
+	case *TablePage:
 		p.showFlex.Clear()
 		p.showFlex.AddItem(p.table, 0, 1, false)
 		p.table.Clear()
