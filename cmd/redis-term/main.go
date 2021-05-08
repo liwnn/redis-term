@@ -26,6 +26,6 @@ func main() {
 		panic(err)
 	}
 
-	app := redisterm.NewApp()
-	app.Run(v...)
+	app := redisterm.NewApp(v)
+	app.Run()
 }

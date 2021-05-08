@@ -5,7 +5,6 @@ import (
 	"log"
 	"time"
 
-	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 
 	"redisterm/ui"
@@ -38,15 +37,8 @@ func NewDBTree(tree *ui.Tree, preview *ui.Preview) *DBTree {
 
 	tree.SetSelectedFunc(dbTree.OnSelected)
 	tree.SetChangedFunc(dbTree.OnChanged)
-	tree.SetMouseCapture(dbTree.onCapture)
-
-	preview.SetReloadFunc(dbTree.reloadSelectKey)
 
 	return dbTree
-}
-
-func (t *DBTree) onCapture(action tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
-	return action, event
 }
 
 // SetData change db data.
@@ -255,8 +247,7 @@ func (t *DBTree) deleteSelectKey(typ *Reference) {
 	case "key":
 		Log("delete %v", typ.Data.key)
 		t.data.Delete(typ.Data)
-		t.getCurrentNode().SetText(typ.Data.key + " (Removed)")
-		t.getCurrentNode().SetColor(tcell.ColorGray)
+		t.tree.SetNodeRemoved()
 		t.updatePreview(fmt.Sprintf("%v was removed", typ.Data.key), false)
 	case "index":
 		t.data.FlushDB(typ.Data)
@@ -264,57 +255,10 @@ func (t *DBTree) deleteSelectKey(typ *Reference) {
 		t.getCurrentNode().SetText(typ.Data.name)
 	case "dir":
 		t.data.Delete(typ.Data)
-		t.getCurrentNode().SetText(typ.Data.name + " (Removed)")
-		t.getCurrentNode().SetColor(tcell.ColorGray)
-		t.getCurrentNode().ClearChildren()
+		t.tree.SetNodeRemoved()
 		t.updatePreview("", false)
 	default:
 		Log("delete %v not implement", typ.Name)
-	}
-}
-
-func (t *DBTree) reloadSelectKey() {
-	reference := t.getReference(t.getCurrentNode())
-	if reference == nil {
-		return
-	}
-	Log("reload %v", reference.Data.key)
-
-	if reference.Name == "key" {
-		t.data.Select(reference.Index)
-		o := t.data.GetValue(reference.Data.key)
-		if o == nil {
-			reference.Data.removed = true
-			t.getCurrentNode().SetText(reference.Data.name + " (Removed)")
-			t.updatePreview(fmt.Sprintf("%v was removed", reference.Data.key), false)
-			t.preview.SetDeleteText("Delete")
-		} else {
-			t.updatePreview(o, true)
-		}
-		return
-	}
-
-	t.getCurrentNode().ClearChildren()
-	t.data.Reload(reference.Data)
-
-	childen := reference.Data.GetChildren()
-	for _, dataNode := range childen {
-		r := &Reference{
-			Index: reference.Index,
-			Data:  dataNode,
-		}
-		if dataNode.CanExpand() {
-			r.Name = "dir"
-			t.tree.AddNode("▶ "+dataNode.name, r)
-		} else {
-			r.Name = "key"
-			t.tree.AddNode(dataNode.name, r)
-		}
-	}
-
-	if reference.Data.removed {
-		t.getCurrentNode().SetText(reference.Data.name + " (Removed)")
-		t.getCurrentNode().SetColor(tcell.ColorGray)
 	}
 }
 
@@ -347,31 +291,30 @@ type App struct {
 }
 
 // NewApp new
-func NewApp() *App {
-	return &App{
-		dbTree: make(map[string]*DBShow),
+func NewApp(configs []RedisConfig) *App {
+	a := &App{
+		main:    ui.NewMainView(),
+		dbTree:  make(map[string]*DBShow),
+		configs: configs,
+	}
+	a.init()
+	return a
+}
+
+func (a *App) init() {
+	a.main.SetSelectedFunc(a.Show)
+	a.main.SetCmdLineEnter(a.onCmdLineEnter)
+	SetLogger(a.main.GetOutput())
+	for _, config := range a.configs {
+		a.main.AddSelect(config.Host)
 	}
 }
 
 // Run run
-func (a *App) Run(configs ...RedisConfig) {
-	main := ui.NewMainView()
-	a.main = main
-	main.InitLayout()
+func (a *App) Run() {
+	a.main.Select(0)
 
-	a.configs = configs
-
-	for _, config := range a.configs {
-		main.AddSelect(config.Host)
-	}
-	main.SetSelectedFunc(func(index int) {
-		a.Show(a.configs[index])
-	})
-	SetLogger(main.GetOutput())
-	main.Show(0)
-	main.SetCmdLineEnter(a.onCmdLineEnter)
-
-	if err := main.Run(); err != nil {
+	if err := a.main.Run(); err != nil {
 		panic(err)
 	}
 
@@ -381,7 +324,8 @@ func (a *App) Run(configs ...RedisConfig) {
 }
 
 // Show show
-func (a *App) Show(config RedisConfig) {
+func (a *App) Show(index int) {
+	config := a.configs[index]
 	address := fmt.Sprintf("%v:%v", config.Host, config.Port)
 	t, ok := a.dbTree[address]
 	if !ok {
@@ -403,6 +347,7 @@ func (a *App) Show(config RedisConfig) {
 
 		preview.SetRenameFunc(a.renameSelectKey)
 		preview.SetDeleteFunc(a.deleteKey)
+		preview.SetReloadFunc(a.reloadSelectKey)
 	}
 
 	a.tree = t
@@ -458,4 +403,50 @@ func (a *App) deleteKey() {
 	a.main.ShowModal(notice, func() {
 		t.deleteSelectKey(typ)
 	})
+}
+
+func (a *App) reloadSelectKey() {
+	t := a.tree.DBTree
+
+	reference := t.getReference(t.getCurrentNode())
+	if reference == nil {
+		return
+	}
+	Log("reload %v", reference.Data.key)
+
+	if reference.Name == "key" {
+		t.data.Select(reference.Index)
+		o := t.data.GetValue(reference.Data.key)
+		if o == nil {
+			reference.Data.removed = true
+			t.tree.SetNodeRemoved()
+			t.updatePreview(fmt.Sprintf("%v was removed", reference.Data.key), false)
+			t.preview.SetDeleteText("Delete")
+		} else {
+			t.updatePreview(o, true)
+		}
+		return
+	}
+
+	t.getCurrentNode().ClearChildren()
+	t.data.Reload(reference.Data)
+
+	childen := reference.Data.GetChildren()
+	for _, dataNode := range childen {
+		r := &Reference{
+			Index: reference.Index,
+			Data:  dataNode,
+		}
+		if dataNode.CanExpand() {
+			r.Name = "dir"
+			t.tree.AddNode("▶ "+dataNode.name, r)
+		} else {
+			r.Name = "key"
+			t.tree.AddNode(dataNode.name, r)
+		}
+	}
+
+	if reference.Data.removed {
+		t.tree.SetNodeRemoved()
+	}
 }

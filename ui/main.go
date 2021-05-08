@@ -8,6 +8,7 @@ import (
 	"github.com/rivo/tview"
 )
 
+// MainView main
 type MainView struct {
 	pages        *tview.Pages
 	leftFlexBox  *tview.Flex
@@ -22,11 +23,14 @@ type MainView struct {
 	onCmdLineEnter func(string)
 }
 
+// NewMainView new
 func NewMainView() *MainView {
-	return &MainView{}
+	m := &MainView{}
+	m.initLayout()
+	return m
 }
 
-func (m *MainView) InitLayout() {
+func (m *MainView) initLayout() {
 	m.selectDrop = tview.NewDropDown().SetLabel("Select server:")
 	m.leftFlexBox = tview.NewFlex().SetDirection(tview.FlexRow)
 	m.rightFlexBox = tview.NewFlex().SetDirection(tview.FlexRow)
@@ -64,8 +68,14 @@ func (m *MainView) Run() error {
 	return tview.NewApplication().SetRoot(m.pages, true).EnableMouse(true).Run()
 }
 
+// AddSelect add select
 func (m *MainView) AddSelect(text string) {
 	m.selectDrop.AddOption(text, nil)
+}
+
+// Select db
+func (m *MainView) Select(index int) {
+	m.selectDrop.SetCurrentOption(index)
 }
 
 func (m *MainView) SetSelectedFunc(handler func(index int)) {

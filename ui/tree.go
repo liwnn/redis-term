@@ -18,9 +18,15 @@ func NewTree(rootName string) *Tree {
 	tree.SetBorder(true)
 	tree.SetTitle("KEYS")
 
-	return &Tree{
+	t := &Tree{
 		TreeView: tree,
 	}
+	tree.SetMouseCapture(t.onMouse)
+	return t
+}
+
+func (t *Tree) onMouse(action tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
+	return action, event
 }
 
 // AddNode add node
@@ -31,6 +37,15 @@ func (t *Tree) AddNode(name string, reference interface{}) {
 	}
 	node.SetColor(tcell.ColorGreen)
 	t.TreeView.GetCurrentNode().AddChild(node)
+}
+
+// SetNodeRemoved set node removed
+func (t *Tree) SetNodeRemoved() {
+	node := t.GetCurrentNode()
+	text := node.GetText() + " (Removed)"
+	node.SetText(text)
+	node.SetColor(tcell.ColorGray)
+	node.ClearChildren()
 }
 
 // SetSelectedFunc on select
