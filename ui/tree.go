@@ -26,6 +26,10 @@ func NewTree(rootName string) *Tree {
 }
 
 func (t *Tree) onMouse(action tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
+	switch action {
+	case tview.MouseScrollUp:
+	case tview.MouseScrollDown:
+	}
 	return action, event
 }
 
