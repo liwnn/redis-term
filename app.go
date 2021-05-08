@@ -11,10 +11,6 @@ import (
 	"redisterm/ui"
 )
 
-var (
-	main *ui.MainView
-)
-
 // Reference referenct
 type Reference struct {
 	Name  string
@@ -44,9 +40,7 @@ func NewDBTree(tree *ui.Tree, preview *ui.Preview) *DBTree {
 	tree.SetChangedFunc(dbTree.OnChanged)
 	tree.SetMouseCapture(dbTree.onCapture)
 
-	preview.SetDeleteFunc(dbTree.deleteKey)
 	preview.SetReloadFunc(dbTree.reloadSelectKey)
-	preview.SetRenameFunc(dbTree.renameSelectKey)
 
 	return dbTree
 }
@@ -107,14 +101,7 @@ func (t *DBTree) OnSelected(node *tview.TreeNode) {
 
 // OnChanged on change
 func (t *DBTree) OnChanged(node *tview.TreeNode) {
-	reference := node.GetReference()
-	if reference == nil {
-		return
-	}
-	typ, ok := reference.(*Reference)
-	if !ok {
-		log.Fatalf("reference \n")
-	}
+	typ := t.getReference(node)
 	if typ.Name == "db" {
 		Log("OnChanged: db %v", typ.Name)
 		t.preview.SetOpBtnVisible(false)
@@ -286,27 +273,6 @@ func (t *DBTree) deleteSelectKey(typ *Reference) {
 	}
 }
 
-func (t *DBTree) renameSelectKey() {
-	reference := t.getReference(t.getCurrentNode())
-	if reference == nil {
-		return
-	}
-	if reference.Name != "key" {
-		return
-	}
-
-	notice := fmt.Sprintf("Rename %v->%v", reference.Data.key, t.preview.GetKey())
-	main.ShowModal(notice, func() {
-		if reference.Data.key == t.preview.GetKey() {
-			return
-		}
-
-		Log("rename %v %v", reference.Data.key, t.preview.GetKey())
-		t.data.Rename(reference.Data, t.preview.GetKey())
-		t.getCurrentNode().SetText(reference.Data.name)
-	})
-}
-
 func (t *DBTree) reloadSelectKey() {
 	reference := t.getReference(t.getCurrentNode())
 	if reference == nil {
@@ -352,25 +318,6 @@ func (t *DBTree) reloadSelectKey() {
 	}
 }
 
-func (t *DBTree) deleteKey() {
-	typ := t.getReference(t.getCurrentNode())
-	if typ == nil {
-		return
-	}
-	var notice string
-	switch typ.Name {
-	case "key":
-		notice = "Delete " + typ.Data.key + " ?"
-	case "index":
-		notice = fmt.Sprintf("FlushDB index:%v?", typ.Index)
-	case "dir":
-		notice = "Delete " + typ.Data.key + "* ?"
-	}
-	main.ShowModal(notice, func() {
-		t.deleteSelectKey(typ)
-	})
-}
-
 // Close close
 func (t *DBTree) Close() {
 	t.data.Close()
@@ -384,11 +331,17 @@ type RedisConfig struct {
 	Auth string `json:"auth"`
 }
 
+type DBShow struct {
+	*DBTree
+	*ui.Preview
+}
+
 // App app
 type App struct {
-	tree *DBTree
+	main *ui.MainView
 
-	dbTree map[string]*DBTree
+	tree   *DBShow
+	dbTree map[string]*DBShow
 
 	configs []RedisConfig
 }
@@ -396,13 +349,14 @@ type App struct {
 // NewApp new
 func NewApp() *App {
 	return &App{
-		dbTree: make(map[string]*DBTree),
+		dbTree: make(map[string]*DBShow),
 	}
 }
 
 // Run run
 func (a *App) Run(configs ...RedisConfig) {
-	main = ui.NewMainView()
+	main := ui.NewMainView()
+	a.main = main
 	main.InitLayout()
 
 	a.configs = configs
@@ -433,29 +387,75 @@ func (a *App) Show(config RedisConfig) {
 	if !ok {
 		client := NewRedis(address, config.Auth)
 		data := NewData(client)
-		preview := ui.NewPreview()
 
 		tree := ui.NewTree("")
 		tree.GetRoot().SetReference(&Reference{
 			Name: "db",
 		})
+		preview := ui.NewPreview()
 
-		t = NewDBTree(tree, preview)
+		t = &DBShow{
+			DBTree:  NewDBTree(tree, preview),
+			Preview: preview,
+		}
 		t.SetData(config.Host, data)
-
 		a.dbTree[address] = t
+
+		preview.SetRenameFunc(a.renameSelectKey)
+		preview.SetDeleteFunc(a.deleteKey)
 	}
 
 	a.tree = t
 
-	main.SetTree(a.tree.tree.TreeView)
-	main.SetPreview(a.tree.preview.FlexBox())
+	a.main.SetTree(a.tree.tree.TreeView)
+	a.main.SetPreview(a.tree.preview.FlexBox())
 }
 
 func (a *App) onCmdLineEnter(text string) {
-	view := main.GetCmdWriter()
+	view := a.main.GetCmdWriter()
 	fmt.Fprintf(view, "[#00aa00]redis%v> [blue]", a.tree.data.index)
 	fmt.Fprintln(view, text)
 	fmt.Fprintf(view, "[white]")
 	a.tree.data.Cmd(view, text)
+}
+
+func (a *App) renameSelectKey() {
+	reference := a.tree.getReference(a.tree.getCurrentNode())
+	if reference == nil {
+		return
+	}
+	if reference.Name != "key" {
+		return
+	}
+
+	notice := fmt.Sprintf("Rename %v->%v", reference.Data.key, a.tree.Preview.GetKey())
+	a.main.ShowModal(notice, func() {
+		if reference.Data.key == a.tree.Preview.GetKey() {
+			return
+		}
+
+		Log("rename %v %v", reference.Data.key, a.tree.Preview.GetKey())
+		a.tree.data.Rename(reference.Data, a.tree.Preview.GetKey())
+		a.tree.getCurrentNode().SetText(reference.Data.name)
+	})
+}
+
+func (a *App) deleteKey() {
+	t := a.tree.DBTree
+	typ := t.getReference(t.getCurrentNode())
+	if typ == nil {
+		return
+	}
+	var notice string
+	switch typ.Name {
+	case "key":
+		notice = "Delete " + typ.Data.key + " ?"
+	case "index":
+		notice = fmt.Sprintf("FlushDB index:%v?", typ.Index)
+	case "dir":
+		notice = "Delete " + typ.Data.key + "* ?"
+	}
+	a.main.ShowModal(notice, func() {
+		t.deleteSelectKey(typ)
+	})
 }
