@@ -402,6 +402,9 @@ func NewApp() *App {
 
 // Run run
 func (a *App) Run(configs ...RedisConfig) {
+	main = ui.NewMainView()
+	main.InitLayout()
+
 	a.configs = configs
 
 	for _, config := range a.configs {
@@ -444,9 +447,13 @@ func (a *App) Show(config RedisConfig) {
 	}
 
 	a.tree = t
+
+	main.SetTree(a.tree.tree.TreeView)
+	main.SetPreview(a.tree.preview.FlexBox())
 }
 
 func (a *App) onCmdLineEnter(text string) {
+	view := main.GetCmdWriter()
 	fmt.Fprintf(view, "[#00aa00]redis%v> [blue]", a.tree.data.index)
 	fmt.Fprintln(view, text)
 	fmt.Fprintf(view, "[white]")

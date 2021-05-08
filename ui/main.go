@@ -18,7 +18,12 @@ type MainView struct {
 	bottomPanel tview.Primitive
 	console     *tview.TextView
 
+	cmdLineView    *tview.TextView
 	onCmdLineEnter func(string)
+}
+
+func NewMainView() *MainView {
+	return &MainView{}
 }
 
 func (m *MainView) InitLayout() {
@@ -67,14 +72,19 @@ func (m *MainView) SetSelectedFunc(handler func(index int)) {
 	m.selectDrop.SetSelectedFunc(func(text string, index int) {
 		handler(index)
 
-		m.leftFlexBox.Clear()
-		m.leftFlexBox.AddItem(m.selectDrop, 1, 0, false)
-		//m.leftFlexBox.AddItem(m.tree.tree, 0, 1, true)
-
-		m.rightFlexBox.Clear()
-		//m.rightFlexBox.AddItem(m.tree.preview.FlexBox(), 0, 3, false)
-		m.rightFlexBox.AddItem(m.bottomPanel, 0, 1, false)
 	})
+}
+
+func (m *MainView) SetTree(tree *tview.TreeView) {
+	m.leftFlexBox.Clear()
+	m.leftFlexBox.AddItem(m.selectDrop, 1, 0, false)
+	m.leftFlexBox.AddItem(tree, 0, 1, true)
+}
+
+func (m *MainView) SetPreview(preview *tview.Flex) {
+	m.rightFlexBox.Clear()
+	m.rightFlexBox.AddItem(preview, 0, 3, false)
+	m.rightFlexBox.AddItem(m.bottomPanel, 0, 1, false)
 }
 
 func (m *MainView) Show(index int) {
@@ -113,6 +123,7 @@ func (m *MainView) createBottom() tview.Primitive {
 		title := "redis-cli"
 		cmdLine := tview.NewInputField()
 		view := tview.NewTextView()
+		m.cmdLineView = view
 
 		cmdLine.SetPlaceholder("input command")
 		cmdLine.SetFieldBackgroundColor(tcell.ColorDarkSlateGrey)
@@ -152,4 +163,8 @@ func (m *MainView) createBottom() tview.Primitive {
 
 func (m *MainView) SetCmdLineEnter(handler func(string)) {
 	m.onCmdLineEnter = handler
+}
+
+func (m *MainView) GetCmdWriter() io.Writer {
+	return m.cmdLineView
 }
