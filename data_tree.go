@@ -16,11 +16,6 @@ type DataNode struct {
 	childMap map[string]*DataNode
 }
 
-// CanExpand 是否可展开
-func (n *DataNode) CanExpand() bool {
-	return len(n.child) != 0
-}
-
 // HasChild return has child
 func (n *DataNode) HasChild() bool {
 	return len(n.child) != 0
@@ -88,7 +83,13 @@ func (n *DataNode) AddChild(name, key string) *DataNode {
 
 // RemoveSelf remove self.
 func (n *DataNode) RemoveSelf() {
-	n.p.RemoveChild(n)
+	if n.p == nil {
+		return
+	}
+	if n.p.RemoveChild(n) == nil {
+		return
+	}
+	n.removed = true
 	if len(n.p.child) == 0 {
 		n.p.RemoveSelf()
 	}

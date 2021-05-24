@@ -66,6 +66,9 @@ func (r *Redis) Scan(cursor string, match string, count int) (string, []string) 
 	if err != nil {
 		return "", nil
 	}
+	if result == nil {
+		return "", nil
+	}
 	d := result.ToArray()
 	if len(d) != 2 {
 		return "", nil

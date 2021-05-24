@@ -6,7 +6,7 @@ import (
 	"log"
 	"strconv"
 	"strings"
-	
+
 	"redisterm/redis"
 )
 
@@ -194,7 +194,6 @@ func (d *Data) Reload(node *DataNode) {
 
 	if !node.HasChild() {
 		node.RemoveSelf()
-		node.removed = true
 	}
 }
 

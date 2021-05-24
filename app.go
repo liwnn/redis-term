@@ -51,7 +51,7 @@ func (t *DBTree) SetData(name string, data *Data) {
 // OnSelected on select
 func (t *DBTree) OnSelected(node *tview.TreeNode) {
 	typ := t.getReference(node)
-	Log("OnSelected: %v %v", typ.Name, typ.Index)
+	Log("OnSelected: name[%v] index[%v]", typ.Name, typ.Index)
 
 	t.data.Select(typ.Index)
 	childen := node.GetChildren()
@@ -77,7 +77,7 @@ func (t *DBTree) OnSelected(node *tview.TreeNode) {
 				Index: typ.Index,
 				Data:  dataNode,
 			}
-			if dataNode.CanExpand() {
+			if dataNode.HasChild() {
 				r.Name = "dir"
 				t.tree.AddNode("▶ "+dataNode.name, r)
 			} else {
@@ -86,7 +86,7 @@ func (t *DBTree) OnSelected(node *tview.TreeNode) {
 			}
 		}
 	}
-	if typ.Data != nil && typ.Data.CanExpand() {
+	if typ.Data != nil && typ.Data.HasChild() {
 		t.tree.SetNodeText(typ.Data.name)
 	}
 }
@@ -437,7 +437,7 @@ func (a *App) reloadSelectKey() {
 			Index: reference.Index,
 			Data:  dataNode,
 		}
-		if dataNode.CanExpand() {
+		if dataNode.HasChild() {
 			r.Name = "dir"
 			t.tree.AddNode("▶ "+dataNode.name, r)
 		} else {
