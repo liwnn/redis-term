@@ -463,10 +463,10 @@ func (a *App) reloadSelectKey() {
 	}
 
 	node.ClearChildren()
-	node.SetExpanded(false)
-	node.SetText(reference.Data.name)
 	if err := t.data.Reload(reference.Data); err != nil {
 		Log("[App] err %v", err)
+		node.SetExpanded(false)
+		node.SetText(reference.Data.name)
 	}
 
 	childen := reference.Data.GetChildren()
