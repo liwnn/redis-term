@@ -2,7 +2,6 @@ package redisterm
 
 import (
 	"errors"
-	"log"
 	"net"
 	"strconv"
 
@@ -21,22 +20,22 @@ type Redis struct {
 }
 
 // NewRedis new
-func NewRedis(address string, auth string) *Redis {
+func NewRedis(address string, auth string) (*Redis, error) {
 	conn, err := net.Dial("tcp", address)
 	if err != nil {
-		log.Fatalln(err)
+		return nil, err
 	}
 	client := redis.NewClient(conn)
 	if len(auth) > 0 {
 		r, err := client.Do("AUTH", auth)
 		if err != nil {
-			return nil
+			return nil, err
 		}
 		Log("AUTH %v", r.String())
 	}
 	return &Redis{
 		client: client,
-	}
+	}, nil
 }
 
 // Close close conn.
@@ -60,24 +59,24 @@ func (r *Redis) GetDatabases() (int, error) {
 }
 
 // Scan the keys
-func (r *Redis) Scan(cursor string, match string, count int) (string, []string) {
+func (r *Redis) Scan(cursor string, match string, count int) (string, []string, error) {
 	countStr := strconv.Itoa(count)
 	result, err := r.client.Do("SCAN", cursor, "MATCH", match, "COUNT", countStr)
 	if err != nil {
-		return "", nil
+		return "", nil, err
 	}
 	if result == nil {
-		return "", nil
+		return "", nil, err
 	}
 	d := result.ToArray()
 	if len(d) != 2 {
-		return "", nil
+		return "", nil, err
 	}
 	nextCursor := d[0].String()
 	keys, _ := d[1].List()
 
 	Log("[Redis] scan %v MATCH %v COUNT %v", cursor, match, count)
-	return nextCursor, keys
+	return nextCursor, keys, nil
 }
 
 // Keys keys
@@ -180,15 +179,16 @@ func (r *Redis) GetList(key string) []string {
 }
 
 // Select select index
-func (r *Redis) Select(index int) {
+func (r *Redis) Select(index int) error {
 	result, err := r.client.Do("SELECT", strconv.Itoa(index))
 	if err != nil {
-		log.Fatalln(err)
+		return err
 	}
 	if result.String() != "OK" {
-		log.Fatalln(result.String())
+		return errors.New(result.String())
 	}
 	Log("[Redis] select %v", index)
+	return nil
 }
 
 // Rename key -> newKey
@@ -202,21 +202,23 @@ func (r *Redis) Rename(key, newKey string) error {
 }
 
 // Del delete a key.
-func (r *Redis) Del(key string) {
+func (r *Redis) Del(key string) error {
 	result, err := r.client.Do("DEL", key)
 	if err != nil {
-		log.Fatalln(err)
+		return err
 	}
 
 	Log("[Redis] DEL %v %v", key, result)
+	return nil
 }
 
 // FlushDB remove all keys from current database.
-func (r *Redis) FlushDB() {
+func (r *Redis) FlushDB() error {
 	result, err := r.client.Do("FLUSHDB")
 	if err != nil {
-		log.Fatalln(err)
+		return err
 	}
 
 	Log("[Redis] FLUSHDB  %v", result)
+	return nil
 }

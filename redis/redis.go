@@ -5,6 +5,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Client client
@@ -13,7 +14,8 @@ type Client struct {
 	reader *RESPReader
 	writer *RESPWriter
 
-	index int
+	timeout time.Duration
+	index   int
 }
 
 // NewClient new
@@ -21,9 +23,10 @@ func NewClient(conn net.Conn) *Client {
 	rr := NewReader(conn)
 	ww := NewRESPWriter(conn)
 	return &Client{
-		conn:   conn,
-		reader: rr,
-		writer: ww,
+		conn:    conn,
+		reader:  rr,
+		writer:  ww,
+		timeout: time.Second * 3,
 	}
 }
 
@@ -33,8 +36,15 @@ func (r *Client) Do(cmd ...string) (*Result, error) {
 		return nil, fmt.Errorf("empty")
 	}
 
+	if r.timeout > 0 {
+		r.conn.SetWriteDeadline(time.Now().Add(r.timeout))
+	}
 	if err := r.writer.WriteCommand(cmd...); err != nil {
 		return nil, err
+	}
+
+	if r.timeout > 0 {
+		r.conn.SetReadDeadline(time.Now().Add(r.timeout))
 	}
 	o, err := r.reader.ReadObject()
 	if err != nil {

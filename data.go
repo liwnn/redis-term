@@ -1,6 +1,7 @@
 package redisterm
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -10,29 +11,49 @@ import (
 	"redisterm/redis"
 )
 
+var (
+	ErrDBNotConnect = errors.New("Db not connect")
+)
+
 // Data data
 type Data struct {
-	redis *Redis
+	redis   *Redis
+	address string
+	auth    string
 
 	db    []*DataTree
 	index int
 }
 
 // NewData new
-func NewData(redis *Redis) *Data {
+func NewData(addr string, auth string) *Data {
 	r := &Data{
-		redis: redis,
+		address: addr,
+		auth:    auth,
 	}
 
 	return r
 }
 
+// Connect db
+func (d *Data) Connect() error {
+	client, err := NewRedis(d.address, d.auth)
+	if err != nil {
+		return err
+	}
+	d.redis = client
+	return nil
+}
+
 // GetDatabases database name
-func (d *Data) GetDatabases() []*DataNode {
+func (d *Data) GetDatabases() ([]*DataNode, error) {
+	if d.redis == nil {
+		return nil, ErrDBNotConnect
+	}
 	if len(d.db) == 0 {
 		dbNum, err := d.redis.GetDatabases()
 		if err != nil {
-			return nil
+			return nil, err
 		}
 		for index := 0; index < dbNum; index++ {
 			n := NewDataTree("db" + strconv.Itoa(index))
@@ -44,11 +65,14 @@ func (d *Data) GetDatabases() []*DataNode {
 	for _, v := range d.db {
 		r = append(r, v.root)
 	}
-	return r
+	return r, nil
 }
 
 // Cmd cmd
 func (d *Data) Cmd(w io.Writer, cmd string) error {
+	if d.redis == nil {
+		return nil
+	}
 	args := strings.Fields(cmd)
 	r, err := d.redis.client.Do(args...)
 	if err != nil {
@@ -76,13 +100,20 @@ func (d *Data) Cmd(w io.Writer, cmd string) error {
 }
 
 // ScanAllKeys get all key
-func (d *Data) ScanAllKeys() []*DataNode {
+func (d *Data) ScanAllKeys() ([]*DataNode, error) {
+	if d.redis == nil {
+		return nil, ErrDBNotConnect
+	}
 	n := d.db[d.index]
 
 	var cursor = "0"
 	for {
 		var keys []string
-		cursor, keys = d.redis.Scan(cursor, "*", 10000)
+		var err error
+		cursor, keys, err = d.redis.Scan(cursor, "*", 10000)
+		if err != nil {
+			return nil, err
+		}
 		for _, key := range keys {
 			n.AddKey(key)
 		}
@@ -91,11 +122,14 @@ func (d *Data) ScanAllKeys() []*DataNode {
 		}
 	}
 
-	return n.GetChildren(n.root)
+	return n.GetChildren(n.root), nil
 }
 
 // GetKeys get key
 func (d *Data) GetKeys() []*DataNode {
+	if d.redis == nil {
+		return nil
+	}
 	keys := d.redis.Keys("*")
 	n := d.db[d.index]
 	for _, key := range keys {
@@ -111,16 +145,26 @@ func (d *Data) GetChildren(node *DataNode) []*DataNode {
 }
 
 // Select select db
-func (d *Data) Select(index int) {
-	if index == d.index {
-		return
+func (d *Data) Select(index int) error {
+	if d.redis == nil {
+		return ErrDBNotConnect
 	}
-	d.redis.Select(index)
+	if index == d.index {
+		return nil
+	}
+	if err := d.redis.Select(index); err != nil {
+		return err
+	}
+
 	d.index = index
+	return nil
 }
 
 // Rename key -> newKey
 func (d *Data) Rename(node *DataNode, newKey string) {
+	if d.redis == nil {
+		return
+	}
 	err := d.redis.Rename(node.key, newKey)
 	if err != nil {
 		log.Fatal(err)
@@ -136,6 +180,9 @@ func (d *Data) Rename(node *DataNode, newKey string) {
 
 // GetValue value
 func (d *Data) GetValue(key string) interface{} {
+	if d.redis == nil {
+		return nil
+	}
 	val := d.redis.Type(key)
 	switch val {
 	case "string":
@@ -161,29 +208,48 @@ func (d *Data) GetValue(key string) interface{} {
 }
 
 // Delete node
-func (d *Data) Delete(node *DataNode) {
-	d.redis.Del(node.key)
+func (d *Data) Delete(node *DataNode) error {
+	if d.redis == nil {
+		return ErrDBNotConnect
+	}
+	if err := d.redis.Del(node.key); err != nil {
+		return err
+	}
 	node.removed = true
 	for _, v := range node.GetChildren() {
 		d.Delete(v)
 	}
+	return nil
 }
 
 // FlushDB remove all keys from current database.
-func (d *Data) FlushDB(node *DataNode) {
-	d.redis.FlushDB()
+func (d *Data) FlushDB(node *DataNode) error {
+	if d.redis == nil {
+		return ErrDBNotConnect
+	}
+	if err := d.redis.FlushDB(); err != nil {
+		return err
+	}
 	node.ClearChildren()
+	return nil
 }
 
 // Reload reload.
-func (d *Data) Reload(node *DataNode) {
+func (d *Data) Reload(node *DataNode) error {
+	if d.redis == nil {
+		return nil
+	}
 	Log("Data: Reload key %v*", node.key)
 	node.ClearChildren()
 
 	var cursor = "0"
 	for {
 		var keys []string
-		cursor, keys = d.redis.Scan(cursor, node.key+"*", 10000)
+		var err error
+		cursor, keys, err = d.redis.Scan(cursor, node.key+"*", 10000)
+		if err != nil {
+			return err
+		}
 		for _, key := range keys {
 			d.db[d.index].AddKey(key)
 		}
@@ -195,9 +261,13 @@ func (d *Data) Reload(node *DataNode) {
 	if !node.HasChild() {
 		node.RemoveSelf()
 	}
+	return nil
 }
 
 // Close close
 func (d *Data) Close() {
+	if d.redis == nil {
+		return
+	}
 	d.redis.Close()
 }

@@ -51,15 +51,29 @@ func (t *DBTree) SetData(name string, data *Data) {
 // OnSelected on select
 func (t *DBTree) OnSelected(node *tview.TreeNode) {
 	typ := t.getReference(node)
+	err := t.data.Select(typ.Index)
+	if err != nil {
+		if err := t.data.Connect(); err != nil {
+			Log("[OnSelected] %v", err)
+			return
+		}
+	}
 	Log("OnSelected: name[%v] index[%v]", typ.Name, typ.Index)
-
-	t.data.Select(typ.Index)
 	childen := node.GetChildren()
 	if len(childen) == 0 {
 		var dataNodes []*DataNode
 		switch typ.Name {
 		case "db":
-			for i, dataNode := range t.data.GetDatabases() {
+			dbs, err := t.data.GetDatabases()
+			if err != nil {
+				if err := t.data.Connect(); err == nil {
+					dbs, _ = t.data.GetDatabases()
+				} else {
+					Log("[OnSelected] db %v", err)
+					return
+				}
+			}
+			for i, dataNode := range dbs {
 				t.tree.AddNode(dataNode.name, &Reference{
 					Name:  "index",
 					Index: i,
@@ -68,7 +82,15 @@ func (t *DBTree) OnSelected(node *tview.TreeNode) {
 			}
 		case "index":
 			//dataNodes := t.data.GetKeys()
-			dataNodes = t.data.ScanAllKeys()
+			dataNodes, err = t.data.ScanAllKeys()
+			if err != nil {
+				if err := t.data.Connect(); err == nil {
+					dataNodes, _ = t.data.ScanAllKeys()
+				} else {
+					Log("[OnSelected] index %v", err)
+					return
+				}
+			}
 		case "dir":
 			dataNodes = t.data.GetChildren(typ.Data)
 		}
@@ -246,15 +268,25 @@ func (t *DBTree) deleteSelectKey(typ *Reference) {
 	switch typ.Name {
 	case "key":
 		Log("delete %v", typ.Data.key)
-		t.data.Delete(typ.Data)
+		if err := t.data.Delete(typ.Data); err != nil {
+			Log("DBTree deleteSelectKey %v", err)
+			return
+		}
 		t.tree.SetNodeRemoved()
 		t.updatePreview(fmt.Sprintf("%v was removed", typ.Data.key), false)
 	case "index":
-		t.data.FlushDB(typ.Data)
+		if err := t.data.FlushDB(typ.Data); err != nil {
+			Log("DBTree deleteSelectKey %v", err)
+			return
+		}
 		t.getCurrentNode().ClearChildren()
 		t.getCurrentNode().SetText(typ.Data.name)
 	case "dir":
-		t.data.Delete(typ.Data)
+		Log("delete %v", typ.Data.key)
+		if err := t.data.Delete(typ.Data); err != nil {
+			Log("DBTree deleteSelectKey %v", err)
+			return
+		}
 		t.tree.SetNodeRemoved()
 		t.updatePreview("", false)
 	default:
@@ -306,7 +338,7 @@ func (a *App) init() {
 	a.main.SetCmdLineEnter(a.onCmdLineEnter)
 	SetLogger(a.main.GetOutput())
 	for _, config := range a.configs {
-		a.main.AddSelect(config.Host)
+		a.main.AddSelect(config.Name)
 	}
 }
 
@@ -329,9 +361,6 @@ func (a *App) Show(index int) {
 	address := fmt.Sprintf("%v:%v", config.Host, config.Port)
 	t, ok := a.dbTree[address]
 	if !ok {
-		client := NewRedis(address, config.Auth)
-		data := NewData(client)
-
 		tree := ui.NewTree("")
 		tree.GetRoot().SetReference(&Reference{
 			Name: "db",
@@ -341,6 +370,10 @@ func (a *App) Show(index int) {
 		t = &DBShow{
 			DBTree:  NewDBTree(tree, preview),
 			Preview: preview,
+		}
+		data := NewData(address, config.Auth)
+		if err := data.Connect(); err != nil {
+			Log("[Show] %v", err)
 		}
 		t.SetData(config.Host, data)
 		a.dbTree[address] = t
@@ -407,8 +440,9 @@ func (a *App) deleteKey() {
 
 func (a *App) reloadSelectKey() {
 	t := a.tree.DBTree
+	node := t.getCurrentNode()
 
-	reference := t.getReference(t.getCurrentNode())
+	reference := t.getReference(node)
 	if reference == nil {
 		return
 	}
@@ -428,8 +462,12 @@ func (a *App) reloadSelectKey() {
 		return
 	}
 
-	t.getCurrentNode().ClearChildren()
-	t.data.Reload(reference.Data)
+	node.ClearChildren()
+	node.SetExpanded(false)
+	node.SetText(reference.Data.name)
+	if err := t.data.Reload(reference.Data); err != nil {
+		Log("[App] err %v", err)
+	}
 
 	childen := reference.Data.GetChildren()
 	for _, dataNode := range childen {
