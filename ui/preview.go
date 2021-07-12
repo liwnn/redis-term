@@ -50,7 +50,6 @@ type Preview struct {
 	flexBox *tview.Flex
 
 	showFlex  *tview.Flex
-	textView  *tview.TextView
 	table     *tview.Table
 	sizeText  *tview.TextView
 	delBtn    *tview.Button
@@ -61,6 +60,8 @@ type Preview struct {
 	prevBtn   *tview.Button
 	nextBtn   *tview.Button
 	numView   *tview.TextView
+
+	textPreview *TextPreview
 
 	pages   []Page
 	curPage int
@@ -104,11 +105,6 @@ func NewPreview() *Preview {
 	previewFlexBox.AddItem(grid, 1, 0, false)
 	previewFlexBox.AddItem(showFlex, 0, 1, false)
 
-	previewText := tview.NewTextView()
-	previewText.
-		SetDynamicColors(true).
-		SetRegions(true)
-
 	previewTable := tview.NewTable()
 	style := tcell.Style{}
 	previewTable.SetBorders(false).
@@ -121,7 +117,6 @@ func NewPreview() *Preview {
 		SetEvaluateAllRows(true)
 	p := &Preview{
 		flexBox:   previewFlexBox,
-		textView:  previewText,
 		table:     previewTable,
 		showFlex:  showFlex,
 		sizeText:  sizeText,
@@ -133,6 +128,8 @@ func NewPreview() *Preview {
 		nextBtn:   nextBtn,
 		prevBtn:   prevBtn,
 		numView:   numView,
+
+		textPreview: NewTextPreview(),
 	}
 	prevBtn.SetSelectedFunc(p.prevPage)
 	nextBtn.SetSelectedFunc(p.nextPage)
@@ -276,14 +273,8 @@ func (p *Preview) Update(pageNum int) {
 	switch pt := page.(type) {
 	case *PageText:
 		p.showFlex.Clear()
-		p.showFlex.AddItem(p.textView, 0, 1, false)
-		text := pt.text
-		if len(text) > 8192 {
-			text = text[:8192] + "..."
-			p.textView.SetText(text)
-		} else {
-			p.textView.SetText(text)
-		}
+		p.showFlex.AddItem(p.textPreview, 0, 1, false)
+		p.textPreview.SetText(pt.text)
 	case *TablePage:
 		p.showFlex.Clear()
 		p.showFlex.AddItem(p.table, 0, 1, false)
