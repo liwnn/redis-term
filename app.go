@@ -335,7 +335,7 @@ func NewApp(configs []RedisConfig) *App {
 
 func (a *App) init() {
 	a.main.SetSelectedFunc(a.Show)
-	a.main.SetCmdLineEnter(a.onCmdLineEnter)
+	a.main.GetCmd().SetEnterHandler(a.onCmdLineEnter)
 	SetLogger(a.main.GetOutput())
 	for _, config := range a.configs {
 		a.main.AddSelect(config.Name)
@@ -387,10 +387,11 @@ func (a *App) Show(index int) {
 
 	a.main.SetTree(a.tree.tree.TreeView)
 	a.main.SetPreview(a.tree.preview.FlexBox())
+	a.onCmdLineEnter("")
 }
 
 func (a *App) onCmdLineEnter(text string) {
-	view := a.main.GetCmdWriter()
+	view := a.main.GetCmd()
 	fmt.Fprintf(view, "[#00aa00]redis%v> [blue]", a.tree.data.index)
 	fmt.Fprintln(view, text)
 	fmt.Fprintf(view, "[white]")

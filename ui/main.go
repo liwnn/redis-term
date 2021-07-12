@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
 
@@ -19,8 +18,7 @@ type MainView struct {
 	bottomPanel tview.Primitive
 	console     *tview.TextView
 
-	cmdLineView    *tview.TextView
-	onCmdLineEnter func(string)
+	cmdConsole *CmdConsole
 }
 
 // NewMainView new
@@ -81,7 +79,6 @@ func (m *MainView) Select(index int) {
 func (m *MainView) SetSelectedFunc(handler func(index int)) {
 	m.selectDrop.SetSelectedFunc(func(text string, index int) {
 		handler(index)
-
 	})
 }
 
@@ -103,6 +100,10 @@ func (m *MainView) Show(index int) {
 
 func (m *MainView) GetOutput() io.Writer {
 	return m.console
+}
+
+func (m *MainView) GetCmd() *CmdConsole {
+	return m.cmdConsole
 }
 
 func (m *MainView) createBottom() tview.Primitive {
@@ -130,36 +131,11 @@ func (m *MainView) createBottom() tview.Primitive {
 	}
 
 	{
-		title := "redis-cli"
-		cmdLine := tview.NewInputField()
-		view := tview.NewTextView()
-		m.cmdLineView = view
+		cmd := NewCmdConsole("redis-cli")
+		m.cmdConsole = cmd
 
-		cmdLine.SetPlaceholder("input command")
-		cmdLine.SetFieldBackgroundColor(tcell.ColorDarkSlateGrey)
-		cmdLine.SetPlaceholderTextColor(tcell.ColorDimGrey)
-		cmdLine.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-			switch event.Key() {
-			case tcell.KeyEnter:
-				text := cmdLine.GetText()
-				cmdLine.SetText("")
-
-				m.onCmdLineEnter(text)
-
-				view.ScrollToEnd()
-				return nil
-			}
-			return event
-		})
-
-		view.SetRegions(true).SetDynamicColors(true)
-		redisCli := tview.NewFlex().
-			SetDirection(tview.FlexRow).
-			AddItem(view, 0, 1, false).
-			AddItem(cmdLine, 1, 1, true)
-		redisCli.SetBorder(true)
-		pages.AddPage(title, redisCli, true, false)
-		fmt.Fprintf(info, `["%v"][slategrey]%s[white][""] `, title, title)
+		pages.AddPage(cmd.Title(), cmd, true, false)
+		fmt.Fprintf(info, `["%v"][slategrey]%s[white][""] `, cmd.Title(), cmd.Title())
 	}
 
 	info.Highlight("CONSOLE")
@@ -169,12 +145,4 @@ func (m *MainView) createBottom() tview.Primitive {
 		AddItem(pages, 0, 1, false).
 		AddItem(info, 1, 1, false)
 	return layout
-}
-
-func (m *MainView) SetCmdLineEnter(handler func(string)) {
-	m.onCmdLineEnter = handler
-}
-
-func (m *MainView) GetCmdWriter() io.Writer {
-	return m.cmdLineView
 }
