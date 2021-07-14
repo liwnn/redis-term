@@ -23,16 +23,13 @@ type DBTree struct {
 	preview *ui.Preview
 
 	data *Data
-
-	pageDelta int
 }
 
 // NewDBTree new
 func NewDBTree(tree *ui.Tree, preview *ui.Preview) *DBTree {
 	dbTree := &DBTree{
-		tree:      tree,
-		preview:   preview,
-		pageDelta: 1000,
+		tree:    tree,
+		preview: preview,
 	}
 
 	tree.SetSelectedFunc(dbTree.OnSelected)
@@ -155,22 +152,14 @@ func (t *DBTree) updatePreview(o interface{}, valid bool) {
 	p := t.preview
 	p.Clear()
 
-	var count int
-	switch o.(type) {
+	switch h := o.(type) {
 	case string:
 		text := o.(string)
-		page := ui.NewTextPage(text)
-		p.AddPage(page)
+		p.ShowText(text)
 		if valid {
 			p.SetSizeText(fmt.Sprintf("Size: %d bytes", len(text)))
 		}
 	case []string:
-		h := o.([]string)
-		count = len(h)
-		pageCount := len(h) / t.pageDelta
-		if len(h)%t.pageDelta > 0 {
-			pageCount++
-		}
 		title := []ui.TablePageTitle{
 			{
 				Name:      "row",
@@ -181,31 +170,13 @@ func (t *DBTree) updatePreview(o interface{}, valid bool) {
 				Expansion: 20,
 			},
 		}
-		for i := 0; i < (pageCount - 1); i++ {
-			rowData := h[i*t.pageDelta : (i+1)*t.pageDelta]
-			var rows = make([][]string, 0, len(rowData))
-			for _, data := range rowData {
-				rows = append(rows, []string{data})
-			}
-			offset := i*t.pageDelta + 1
-			page := ui.NewTablePage(title, rows, offset)
-			p.AddPage(page)
+
+		rows := make([]ui.Row, 0, len(h))
+		for _, v := range h {
+			rows = append(rows, ui.Row{v})
 		}
-		rowData := h[(pageCount-1)*t.pageDelta:]
-		var rows = make([][]string, 0, len(rowData))
-		for _, data := range rowData {
-			rows = append(rows, []string{data})
-		}
-		offset := (pageCount-1)*t.pageDelta + 1
-		page := ui.NewTablePage(title, rows, offset)
-		p.AddPage(page)
+		p.ShowTable(title, rows)
 	case []KVText:
-		h := o.([]KVText)
-		count = len(h)
-		pageCount := len(h) / t.pageDelta
-		if len(h)%t.pageDelta > 0 {
-			pageCount++
-		}
 		title := []ui.TablePageTitle{
 			{
 				Name:      "row",
@@ -220,28 +191,12 @@ func (t *DBTree) updatePreview(o interface{}, valid bool) {
 				Expansion: 24,
 			},
 		}
-		for i := 0; i < pageCount-1; i++ {
-			rowData := h[i*t.pageDelta : (i+1)*t.pageDelta]
-			var rows = make([][]string, 0, len(rowData))
-			for _, data := range rowData {
-				rows = append(rows, []string{data.Key, data.Value})
-			}
-
-			offset := i*t.pageDelta + 1
-			page := ui.NewTablePage(title, rows, offset)
-			p.AddPage(page)
+		rows := make([]ui.Row, 0, len(h))
+		for _, v := range h {
+			rows = append(rows, ui.Row{v.Key, v.Value})
 		}
-		rowData := h[(pageCount-1)*t.pageDelta:]
-		var rows = make([][]string, 0, len(rowData))
-		for _, data := range rowData {
-			rows = append(rows, []string{data.Key, data.Value})
-		}
-		offset := (pageCount-1)*t.pageDelta + 1
-		page := ui.NewTablePage(title, rows, offset)
-		p.AddPage(page)
+		p.ShowTable(title, rows)
 	}
-
-	p.SetContent(count)
 }
 
 func (t *DBTree) getReference(node *tview.TreeNode) *Reference {

@@ -22,10 +22,8 @@ func (p *TextPreview) init() {
 }
 
 func (p *TextPreview) SetText(text string) {
-	if len(text) > 8192 {
-		text = text[:8192] + "..."
-		p.TextView.SetText(text)
-	} else {
-		p.TextView.SetText(text)
+	if len(text) > 4096 {
+		text = text[:4096] + "..."
 	}
+	p.TextView.SetText(text)
 }
