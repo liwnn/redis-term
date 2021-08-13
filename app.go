@@ -56,6 +56,9 @@ func (t *DBTree) OnSelected(node *tview.TreeNode) {
 		}
 	}
 	Log("OnSelected: name[%v] index[%v]", typ.Name, typ.Index)
+	if typ.Data != nil && typ.Data.HasChild() {
+		t.tree.SetNodeText(typ.Data.name)
+	}
 	childen := node.GetChildren()
 	if len(childen) == 0 {
 		var dataNodes []*DataNode
@@ -77,8 +80,8 @@ func (t *DBTree) OnSelected(node *tview.TreeNode) {
 					Data:  dataNode,
 				})
 			}
+			t.addNode(node, dataNodes)
 		case "index":
-			//dataNodes := t.data.GetKeys()
 			dataNodes, err = t.data.ScanAllKeys()
 			if err != nil {
 				if err := t.data.Connect(); err == nil {
@@ -88,25 +91,28 @@ func (t *DBTree) OnSelected(node *tview.TreeNode) {
 					return
 				}
 			}
+			t.addNode(node, dataNodes)
 		case "dir":
 			dataNodes = t.data.GetChildren(typ.Data)
-		}
-		for _, dataNode := range dataNodes {
-			r := &Reference{
-				Index: typ.Index,
-				Data:  dataNode,
-			}
-			if dataNode.HasChild() {
-				r.Name = "dir"
-				t.tree.AddNode("▶ "+dataNode.name, r)
-			} else {
-				r.Name = "key"
-				t.tree.AddNode(dataNode.name, r)
-			}
+			t.addNode(node, dataNodes)
 		}
 	}
-	if typ.Data != nil && typ.Data.HasChild() {
-		t.tree.SetNodeText(typ.Data.name)
+}
+
+func (t *DBTree) addNode(node *tview.TreeNode, dataNodes []*DataNode) {
+	typ := t.getReference(node)
+	for _, dataNode := range dataNodes {
+		r := &Reference{
+			Index: typ.Index,
+			Data:  dataNode,
+		}
+		if dataNode.HasChild() {
+			r.Name = "dir"
+			t.tree.AddNode("▶ "+dataNode.name, r)
+		} else {
+			r.Name = "key"
+			t.tree.AddNode(dataNode.name, r)
+		}
 	}
 }
 
@@ -390,7 +396,7 @@ func (a *App) deleteKey() {
 		notice = "Delete " + typ.Data.key + "* ?"
 	}
 	a.main.ShowModal(notice, func() {
-		t.deleteSelectKey(typ)
+		go t.deleteSelectKey(typ)
 	})
 }
 
