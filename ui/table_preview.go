@@ -112,13 +112,12 @@ func (p *TablePreview) Update(title []TablePageTitle, rows []Row) {
 	p.totalPage = pageCount
 	p.Show(0)
 
-	p.updateNumView(len(rows))
+	p.numView.SetText("Count:" + strconv.Itoa(len(rows)))
 }
 
 func (p *TablePreview) Show(pageNum int) {
 	p.curPage = pageNum
 	p.table.Clear()
-
 	for i, v := range p.title {
 		p.table.SetCell(0, i, tview.NewTableCell(v.Name).SetExpansion(v.Expansion).SetSelectable(false).SetTextColor(tcell.ColorYellow))
 	}
@@ -145,8 +144,4 @@ func (p *TablePreview) Show(pageNum int) {
 
 func (p *TablePreview) SetSelectionChangedFunc(handler func(row, column int)) {
 	p.table.SetSelectionChangedFunc(handler)
-}
-
-func (p *TablePreview) updateNumView(count int) {
-	p.numView.SetText("Count:" + strconv.Itoa(count))
 }

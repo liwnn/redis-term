@@ -44,20 +44,29 @@ func (m *MainView) initLayout() {
 }
 
 func (m *MainView) createModal() *tview.Modal {
-	modal := tview.NewModal().
-		AddButtons([]string{"Ok", "Cancel"})
+	modal := tview.NewModal()
 	return modal
 }
 
 // ShowModal show modal
 func (m *MainView) ShowModal(text string, okFunc func()) {
+	m.modal.AddButtons([]string{"Ok", "Cancel"})
 	m.modal.SetText(text).
 		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
-			if buttonIndex == 0 {
+			if buttonIndex == 0 && okFunc != nil {
 				okFunc()
 			}
 			m.pages.HidePage("modal")
 		})
+	m.pages.ShowPage("modal")
+}
+
+func (m *MainView) ShowModalOK(text string) {
+	m.modal.ClearButtons()
+	m.modal.AddButtons([]string{"Ok"})
+	m.modal.SetText(text).SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+		m.pages.HidePage("modal")
+	})
 	m.pages.ShowPage("modal")
 }
 

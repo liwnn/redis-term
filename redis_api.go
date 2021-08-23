@@ -201,6 +201,16 @@ func (r *Redis) Rename(key, newKey string) error {
 	return nil
 }
 
+// Set key -> value
+func (r *Redis) Set(key, value string) error {
+	result, err := r.client.Do("SET", key, value)
+	if err != nil {
+		return err
+	}
+	Log("[Redis] set %v -> %v, resp[%v]", key, value, result.String())
+	return nil
+}
+
 // Del delete a key.
 func (r *Redis) Del(key string) error {
 	result, err := r.client.Do("DEL", key)

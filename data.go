@@ -207,6 +207,17 @@ func (d *Data) GetValue(key string) interface{} {
 	}
 }
 
+func (d *Data) SetValue(node *DataNode, value string) error {
+	if d.redis == nil {
+		return ErrDBNotConnect
+	}
+	err := d.redis.Set(node.key, value)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 // Delete node
 func (d *Data) Delete(node *DataNode) error {
 	if d.redis == nil {

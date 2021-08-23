@@ -123,6 +123,10 @@ func (p *Preview) SetDeleteText(text string) {
 	p.delBtn.SetLabel(text)
 }
 
+func (p *Preview) SetSaveFunc(f func(oldValue, newValue string)) {
+	p.textPreview.SetSaveHandler(f)
+}
+
 // SetKey set key input text
 func (p *Preview) SetKey(text string) {
 	if len(text) > 0 {

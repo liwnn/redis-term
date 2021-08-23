@@ -342,6 +342,7 @@ func (a *App) Show(index int) {
 		preview.SetRenameFunc(a.renameSelectKey)
 		preview.SetDeleteFunc(a.deleteKey)
 		preview.SetReloadFunc(a.reloadSelectKey)
+		preview.SetSaveFunc(a.saveKey)
 	}
 
 	a.tree = t
@@ -448,5 +449,26 @@ func (a *App) reloadSelectKey() {
 
 	if reference.Data.removed {
 		t.tree.SetNodeRemoved()
+	}
+}
+
+func (a *App) saveKey(oldValue, newValue string) {
+	if oldValue == newValue {
+		a.main.ShowModalOK("Nothing to save")
+		return
+	}
+	t := a.tree.DBTree
+	typ := t.getReference(t.getCurrentNode())
+	if typ == nil {
+		return
+	}
+	switch typ.Name {
+	case "key":
+		if err := t.data.SetValue(typ.Data, newValue); err == nil {
+			t.preview.ShowText(newValue)
+			a.main.ShowModalOK("Value was updated!")
+		} else {
+			Log("saveKey %v", err)
+		}
 	}
 }
