@@ -295,17 +295,17 @@ func NewApp(configs []RedisConfig) *App {
 }
 
 func (a *App) init() {
-	a.main.SetSelectedFunc(a.Show)
+	a.main.GetOpLine().SetSelectedFunc(a.Show)
 	a.main.GetCmd().SetEnterHandler(a.onCmdLineEnter)
 	SetLogger(a.main.GetOutput())
 	for _, config := range a.configs {
-		a.main.AddSelect(config.Name)
+		a.main.GetOpLine().AddSelect(config.Name)
 	}
 }
 
 // Run run
 func (a *App) Run() {
-	a.main.Select(0)
+	a.main.GetOpLine().Select(0)
 
 	if err := a.main.Run(); err != nil {
 		panic(err)

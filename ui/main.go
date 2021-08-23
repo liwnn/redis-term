@@ -13,11 +13,11 @@ type MainView struct {
 	leftFlexBox  *tview.Flex
 	rightFlexBox *tview.Flex
 	modal        *tview.Modal
-	selectDrop   *tview.DropDown
 
 	bottomPanel tview.Primitive
 	console     *tview.TextView
 
+	opLine     *OpLine
 	cmdConsole *CmdConsole
 }
 
@@ -29,7 +29,7 @@ func NewMainView() *MainView {
 }
 
 func (m *MainView) initLayout() {
-	m.selectDrop = tview.NewDropDown().SetLabel("Select server:")
+	m.opLine = NewOpLine()
 	m.leftFlexBox = tview.NewFlex().SetDirection(tview.FlexRow)
 	m.rightFlexBox = tview.NewFlex().SetDirection(tview.FlexRow)
 	m.modal = m.createModal()
@@ -75,25 +75,13 @@ func (m *MainView) Run() error {
 	return tview.NewApplication().SetRoot(m.pages, true).EnableMouse(true).Run()
 }
 
-// AddSelect add select
-func (m *MainView) AddSelect(text string) {
-	m.selectDrop.AddOption(text, nil)
-}
-
-// Select db
-func (m *MainView) Select(index int) {
-	m.selectDrop.SetCurrentOption(index)
-}
-
-func (m *MainView) SetSelectedFunc(handler func(index int)) {
-	m.selectDrop.SetSelectedFunc(func(text string, index int) {
-		handler(index)
-	})
+func (m *MainView) GetOpLine() *OpLine {
+	return m.opLine
 }
 
 func (m *MainView) SetTree(tree *tview.TreeView) {
 	m.leftFlexBox.Clear()
-	m.leftFlexBox.AddItem(m.selectDrop, 1, 0, false)
+	m.leftFlexBox.AddItem(m.opLine, 1, 0, false)
 	m.leftFlexBox.AddItem(tree, 0, 1, true)
 }
 
@@ -101,10 +89,6 @@ func (m *MainView) SetPreview(preview *tview.Flex) {
 	m.rightFlexBox.Clear()
 	m.rightFlexBox.AddItem(preview, 0, 3, false)
 	m.rightFlexBox.AddItem(m.bottomPanel, 0, 1, false)
-}
-
-func (m *MainView) Show(index int) {
-	m.selectDrop.SetCurrentOption(0)
 }
 
 func (m *MainView) GetOutput() io.Writer {
