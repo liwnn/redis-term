@@ -1,7 +1,9 @@
 package redisterm
 
 import (
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"strconv"
 	"time"
@@ -149,6 +151,7 @@ func (t *DBTree) OnChanged(node *tview.TreeNode) {
 		if typ.Name == "index" {
 			t.preview.SetDeleteText("Flush")
 		} else {
+
 			t.preview.SetDeleteText("Delete")
 		}
 		t.updatePreview("", false)
@@ -159,11 +162,10 @@ func (t *DBTree) OnChanged(node *tview.TreeNode) {
 func (t *DBTree) updatePreview(o interface{}, valid bool) {
 	p := t.preview
 	p.Clear()
-
 	switch h := o.(type) {
 	case string:
 		text := o.(string)
-		p.ShowText(text)
+		p.ShowText(text, valid)
 		if valid {
 			p.SetSizeText(fmt.Sprintf("Size: %d bytes", len(text)))
 		}
@@ -279,24 +281,50 @@ type DBShow struct {
 type App struct {
 	main *ui.MainView
 
+	config RedisConfig
 	tree   *DBShow
 	dbTree map[string]*DBShow
 
-	configs []RedisConfig
+	configPath string
+	configs    []RedisConfig
 }
 
 // NewApp new
-func NewApp(configs []RedisConfig) *App {
+func NewApp(config string) *App {
 	a := &App{
-		main:    ui.NewMainView(),
-		dbTree:  make(map[string]*DBShow),
-		configs: configs,
+		main:       ui.NewMainView(),
+		dbTree:     make(map[string]*DBShow),
+		configPath: config,
 	}
+	a.loadConfig()
 	a.init()
 	return a
 }
 
+func (a *App) loadConfig() error {
+	b, err := ioutil.ReadFile(a.configPath)
+	if err != nil {
+		return err
+	}
+
+	var configs []RedisConfig
+	if err := json.Unmarshal(b, &configs); err != nil {
+		return err
+	}
+	a.configs = configs
+	return nil
+}
+
+func (a *App) saveConfig() error {
+	b, err := json.MarshalIndent(a.configs, "", "  ")
+	if err != nil {
+		return err
+	}
+	return ioutil.WriteFile(a.configPath, b, 0)
+}
+
 func (a *App) init() {
+	a.main.GetConfig = a.GetConfig
 	a.main.GetOpLine().SetSelectedFunc(a.Show)
 	a.main.GetCmd().SetEnterHandler(a.onCmdLineEnter)
 	tlog.SetLogger(a.main.GetOutput())
@@ -304,6 +332,9 @@ func (a *App) init() {
 		a.main.GetOpLine().AddSelect(config.Name)
 	}
 	a.main.OnAdd = func(s ui.Setting) {
+		if s.Name == "" {
+			return
+		}
 		port, _ := strconv.Atoi(s.Port)
 		conf := RedisConfig{
 			Name: s.Name,
@@ -311,14 +342,28 @@ func (a *App) init() {
 			Port: port,
 			Auth: s.Auth,
 		}
+		var old bool
 		for i, v := range a.configs {
 			if v.Host == conf.Host && v.Port == conf.Port {
 				a.configs[i] = conf
-				return
+				old = true
+				break
 			}
 		}
-		a.configs = append(a.configs, conf)
-		a.main.GetOpLine().AddSelect(conf.Name)
+		if old {
+			a.main.GetOpLine().ClearAllSelect()
+			for _, config := range a.configs {
+				a.main.GetOpLine().AddSelect(config.Name)
+			}
+			a.main.GetOpLine().SetSelectedFunc(a.Show)
+		} else {
+			a.configs = append(a.configs, conf)
+			a.main.GetOpLine().AddSelect(conf.Name)
+		}
+		if err := a.saveConfig(); err != nil {
+			panic(err)
+		}
+		a.config = conf
 	}
 }
 
@@ -365,6 +410,7 @@ func (a *App) Show(index int) {
 	}
 
 	a.tree = t
+	a.config = config
 
 	a.main.SetTree(a.tree.tree.TreeView)
 	a.main.SetPreview(a.tree.preview.FlexBox())
@@ -484,10 +530,19 @@ func (a *App) saveKey(oldValue, newValue string) {
 	switch typ.Name {
 	case "key":
 		if err := t.data.SetValue(typ.Data, newValue); err == nil {
-			t.preview.ShowText(newValue)
+			t.preview.ShowText(newValue, true)
 			a.main.ShowModalOK("Value was updated!")
 		} else {
 			tlog.Log("saveKey %v", err)
 		}
+	}
+}
+
+func (a *App) GetConfig() ui.Setting {
+	return ui.Setting{
+		Name: a.config.Name,
+		Host: a.config.Host,
+		Port: strconv.Itoa(a.config.Port),
+		Auth: a.config.Auth,
 	}
 }
