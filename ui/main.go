@@ -9,6 +9,7 @@ import (
 
 // MainView main
 type MainView struct {
+	*tview.Application
 	pages        *tview.Pages
 	leftFlexBox  *tview.Flex
 	rightFlexBox *tview.Flex
@@ -17,28 +18,47 @@ type MainView struct {
 	bottomPanel tview.Primitive
 	console     *tview.TextView
 
-	opLine     *OpLine
-	cmdConsole *CmdConsole
+	opLine      *OpLine
+	cmdConsole  *CmdConsole
+	connSetting *ConnSetting
+
+	OnAdd func(s Setting)
 }
 
 // NewMainView new
 func NewMainView() *MainView {
-	m := &MainView{}
-	m.initLayout()
+	m := &MainView{
+		Application: tview.NewApplication(),
+	}
+	m.init()
 	return m
 }
 
-func (m *MainView) initLayout() {
+func (m *MainView) init() {
 	m.opLine = NewOpLine()
+	m.opLine.SetSaveClickFunc(func() {
+		m.pages.ShowPage("conn_setting")
+	})
 	m.leftFlexBox = tview.NewFlex().SetDirection(tview.FlexRow)
 	m.rightFlexBox = tview.NewFlex().SetDirection(tview.FlexRow)
 	m.modal = m.createModal()
 	mainFlexBox := tview.NewFlex().SetDirection(tview.FlexColumn).
 		AddItem(m.leftFlexBox, 0, 1, true).
 		AddItem(m.rightFlexBox, 0, 4, false)
+	m.connSetting = NewConnSetting()
+	m.connSetting.SetCancelHandler(func() {
+		m.pages.HidePage("conn_setting")
+	})
+	m.connSetting.SetOKHandler(func(s Setting) {
+		m.pages.HidePage("conn_setting")
+		if m.OnAdd != nil {
+			m.OnAdd(s)
+		}
+	})
 	m.pages = tview.NewPages()
 	m.pages.AddPage("main", mainFlexBox, true, true)
 	m.pages.AddPage("modal", m.modal, true, false)
+	m.pages.AddPage("conn_setting", m.connSetting, true, false)
 
 	m.bottomPanel = m.createBottom()
 }
@@ -72,7 +92,7 @@ func (m *MainView) ShowModalOK(text string) {
 
 // Run run
 func (m *MainView) Run() error {
-	return tview.NewApplication().SetRoot(m.pages, true).EnableMouse(true).Run()
+	return m.SetRoot(m.pages, true).EnableMouse(true).Run()
 }
 
 func (m *MainView) GetOpLine() *OpLine {

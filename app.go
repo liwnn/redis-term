@@ -3,10 +3,12 @@ package redisterm
 import (
 	"fmt"
 	"log"
+	"strconv"
 	"time"
 
 	"github.com/rivo/tview"
 
+	"redisterm/tlog"
 	"redisterm/ui"
 )
 
@@ -51,11 +53,11 @@ func (t *DBTree) OnSelected(node *tview.TreeNode) {
 	err := t.data.Select(typ.Index)
 	if err != nil {
 		if err := t.data.Connect(); err != nil {
-			Log("[OnSelected] %v", err)
+			tlog.Log("[OnSelected] %v", err)
 			return
 		}
 	}
-	Log("OnSelected: name[%v] index[%v]", typ.Name, typ.Index)
+	tlog.Log("OnSelected: name[%v] index[%v]", typ.Name, typ.Index)
 	if typ.Data != nil && typ.Data.HasChild() {
 		t.tree.SetNodeText(typ.Data.name)
 	}
@@ -69,7 +71,7 @@ func (t *DBTree) OnSelected(node *tview.TreeNode) {
 				if err := t.data.Connect(); err == nil {
 					dbs, _ = t.data.GetDatabases()
 				} else {
-					Log("[OnSelected] db %v", err)
+					tlog.Log("[OnSelected] db %v", err)
 					return
 				}
 			}
@@ -87,7 +89,7 @@ func (t *DBTree) OnSelected(node *tview.TreeNode) {
 				if err := t.data.Connect(); err == nil {
 					dataNodes, _ = t.data.ScanAllKeys()
 				} else {
-					Log("[OnSelected] index %v", err)
+					tlog.Log("[OnSelected] index %v", err)
 					return
 				}
 			}
@@ -120,13 +122,13 @@ func (t *DBTree) addNode(node *tview.TreeNode, dataNodes []*DataNode) {
 func (t *DBTree) OnChanged(node *tview.TreeNode) {
 	typ := t.getReference(node)
 	if typ.Name == "db" {
-		Log("OnChanged: db %v", typ.Name)
+		tlog.Log("OnChanged: db %v", typ.Name)
 		t.preview.SetOpBtnVisible(false)
 	} else {
 		if typ.Name == "index" {
-			Log("OnChanged: %v - %v", typ.Name, typ.Index)
+			tlog.Log("OnChanged: %v - %v", typ.Name, typ.Index)
 		} else {
-			Log("OnChanged: %v - %v", typ.Name, typ.Data.key)
+			tlog.Log("OnChanged: %v - %v", typ.Name, typ.Data.key)
 		}
 		t.preview.SetOpBtnVisible(true)
 	}
@@ -136,7 +138,7 @@ func (t *DBTree) OnChanged(node *tview.TreeNode) {
 			t.data.Select(typ.Index)
 			begin := time.Now()
 			o := t.data.GetValue(typ.Data.key)
-			Log("redis value time cost %v", time.Since(begin))
+			tlog.Log("redis value time cost %v", time.Since(begin))
 			t.updatePreview(o, true)
 		} else {
 			t.updatePreview(fmt.Sprintf("%v was removed", typ.Data.key), false)
@@ -228,30 +230,30 @@ func (t *DBTree) getCurrentNode() *tview.TreeNode {
 func (t *DBTree) deleteSelectKey(typ *Reference) {
 	switch typ.Name {
 	case "key":
-		Log("delete %v", typ.Data.key)
+		tlog.Log("delete %v", typ.Data.key)
 		if err := t.data.Delete(typ.Data); err != nil {
-			Log("DBTree deleteSelectKey %v", err)
+			tlog.Log("DBTree deleteSelectKey %v", err)
 			return
 		}
 		t.tree.SetNodeRemoved()
 		t.updatePreview(fmt.Sprintf("%v was removed", typ.Data.key), false)
 	case "index":
 		if err := t.data.FlushDB(typ.Data); err != nil {
-			Log("DBTree deleteSelectKey %v", err)
+			tlog.Log("DBTree deleteSelectKey %v", err)
 			return
 		}
 		t.getCurrentNode().ClearChildren()
 		t.getCurrentNode().SetText(typ.Data.name)
 	case "dir":
-		Log("delete %v", typ.Data.key)
+		tlog.Log("delete %v", typ.Data.key)
 		if err := t.data.Delete(typ.Data); err != nil {
-			Log("DBTree deleteSelectKey %v", err)
+			tlog.Log("DBTree deleteSelectKey %v", err)
 			return
 		}
 		t.tree.SetNodeRemoved()
 		t.updatePreview("", false)
 	default:
-		Log("delete %v not implement", typ.Name)
+		tlog.Log("delete %v not implement", typ.Name)
 	}
 }
 
@@ -297,9 +299,26 @@ func NewApp(configs []RedisConfig) *App {
 func (a *App) init() {
 	a.main.GetOpLine().SetSelectedFunc(a.Show)
 	a.main.GetCmd().SetEnterHandler(a.onCmdLineEnter)
-	SetLogger(a.main.GetOutput())
+	tlog.SetLogger(a.main.GetOutput())
 	for _, config := range a.configs {
 		a.main.GetOpLine().AddSelect(config.Name)
+	}
+	a.main.OnAdd = func(s ui.Setting) {
+		port, _ := strconv.Atoi(s.Port)
+		conf := RedisConfig{
+			Name: s.Name,
+			Host: s.Host,
+			Port: port,
+			Auth: s.Auth,
+		}
+		for i, v := range a.configs {
+			if v.Host == conf.Host && v.Port == conf.Port {
+				a.configs[i] = conf
+				return
+			}
+		}
+		a.configs = append(a.configs, conf)
+		a.main.GetOpLine().AddSelect(conf.Name)
 	}
 }
 
@@ -334,7 +353,7 @@ func (a *App) Show(index int) {
 		}
 		data := NewData(address, config.Auth)
 		if err := data.Connect(); err != nil {
-			Log("[Show] %v", err)
+			tlog.Log("[Show] %v", err)
 		}
 		t.SetData(config.Host, data)
 		a.dbTree[address] = t
@@ -375,7 +394,7 @@ func (a *App) renameSelectKey() {
 			return
 		}
 
-		Log("rename %v %v", reference.Data.key, a.tree.Preview.GetKey())
+		tlog.Log("rename %v %v", reference.Data.key, a.tree.Preview.GetKey())
 		a.tree.data.Rename(reference.Data, a.tree.Preview.GetKey())
 		a.tree.getCurrentNode().SetText(reference.Data.name)
 	})
@@ -409,7 +428,7 @@ func (a *App) reloadSelectKey() {
 	if reference == nil {
 		return
 	}
-	Log("reload %v", reference.Data.key)
+	tlog.Log("reload %v", reference.Data.key)
 
 	if reference.Name == "key" {
 		t.data.Select(reference.Index)
@@ -427,7 +446,7 @@ func (a *App) reloadSelectKey() {
 
 	node.ClearChildren()
 	if err := t.data.Reload(reference.Data); err != nil {
-		Log("[App] err %v", err)
+		tlog.Log("[App] err %v", err)
 		node.SetExpanded(false)
 		node.SetText(reference.Data.name)
 	}
@@ -468,7 +487,7 @@ func (a *App) saveKey(oldValue, newValue string) {
 			t.preview.ShowText(newValue)
 			a.main.ShowModalOK("Value was updated!")
 		} else {
-			Log("saveKey %v", err)
+			tlog.Log("saveKey %v", err)
 		}
 	}
 }

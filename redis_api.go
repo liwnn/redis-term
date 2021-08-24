@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"redisterm/redis"
+	"redisterm/tlog"
 )
 
 // KVText kv
@@ -31,7 +32,7 @@ func NewRedis(address string, auth string) (*Redis, error) {
 		if err != nil {
 			return nil, err
 		}
-		Log("AUTH %v", r.String())
+		tlog.Log("AUTH %v", r.String())
 	}
 	return &Redis{
 		client: client,
@@ -54,7 +55,7 @@ func (r *Redis) GetDatabases() (int, error) {
 		return 0, err
 	}
 
-	Log("[Redis] config get databases")
+	tlog.Log("[Redis] config get databases")
 	return strconv.Atoi(d[1])
 }
 
@@ -75,7 +76,7 @@ func (r *Redis) Scan(cursor string, match string, count int) (string, []string, 
 	nextCursor := d[0].String()
 	keys, _ := d[1].List()
 
-	Log("[Redis] scan %v MATCH %v COUNT %v", cursor, match, count)
+	tlog.Log("[Redis] scan %v MATCH %v COUNT %v", cursor, match, count)
 	return nextCursor, keys, nil
 }
 
@@ -89,7 +90,7 @@ func (r *Redis) Keys(pattern string) []string {
 	if err != nil {
 		return nil
 	}
-	Log("[Redis] keys %v", pattern)
+	tlog.Log("[Redis] keys %v", pattern)
 	return d
 }
 
@@ -99,7 +100,7 @@ func (r *Redis) Type(key string) string {
 	if err != nil {
 		return ""
 	}
-	Log("[Redis] type %v", key)
+	tlog.Log("[Redis] type %v", key)
 	return result.String()
 }
 
@@ -110,7 +111,7 @@ func (r *Redis) Get(key string) string {
 		return ""
 	}
 
-	Log("[Redis] get %v", key)
+	tlog.Log("[Redis] get %v", key)
 	return result.String()
 }
 
@@ -121,7 +122,7 @@ func (r *Redis) GetByte(key string) ([]byte, error) {
 		return nil, err
 	}
 
-	Log("[Redis] get %v", key)
+	tlog.Log("[Redis] get %v", key)
 	if result.IsNil() {
 		return nil, errors.New("nil")
 	}
@@ -144,7 +145,7 @@ func (r *Redis) GetKV(key string) []KVText {
 	for i := 0; i < len(elems)/2; i++ {
 		h = append(h, KVText{elems[i*2], elems[i*2+1]})
 	}
-	Log("[Redis] get %v", key)
+	tlog.Log("[Redis] get %v", key)
 	return h
 }
 
@@ -159,7 +160,7 @@ func (r *Redis) GetSet(key string) []string {
 	if err != nil {
 		return nil
 	}
-	Log("[Redis] get %v", key)
+	tlog.Log("[Redis] get %v", key)
 	return elems
 }
 
@@ -174,7 +175,7 @@ func (r *Redis) GetList(key string) []string {
 	if err != nil {
 		return nil
 	}
-	Log("[Redis] get %v", key)
+	tlog.Log("[Redis] get %v", key)
 	return elems
 }
 
@@ -187,7 +188,7 @@ func (r *Redis) Select(index int) error {
 	if result.String() != "OK" {
 		return errors.New(result.String())
 	}
-	Log("[Redis] select %v", index)
+	tlog.Log("[Redis] select %v", index)
 	return nil
 }
 
@@ -197,7 +198,7 @@ func (r *Redis) Rename(key, newKey string) error {
 	if err != nil {
 		return err
 	}
-	Log("[Redis] rename %v -> %v, resp[%v]", key, newKey, result.String())
+	tlog.Log("[Redis] rename %v -> %v, resp[%v]", key, newKey, result.String())
 	return nil
 }
 
@@ -207,7 +208,7 @@ func (r *Redis) Set(key, value string) error {
 	if err != nil {
 		return err
 	}
-	Log("[Redis] set %v -> %v, resp[%v]", key, value, result.String())
+	tlog.Log("[Redis] set %v -> %v, resp[%v]", key, value, result.String())
 	return nil
 }
 
@@ -218,7 +219,7 @@ func (r *Redis) Del(key string) error {
 		return err
 	}
 
-	Log("[Redis] DEL %v %v", key, result)
+	tlog.Log("[Redis] DEL %v %v", key, result)
 	return nil
 }
 
@@ -229,6 +230,6 @@ func (r *Redis) FlushDB() error {
 		return err
 	}
 
-	Log("[Redis] FLUSHDB  %v", result)
+	tlog.Log("[Redis] FLUSHDB  %v", result)
 	return nil
 }

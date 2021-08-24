@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"redisterm/redis"
+	"redisterm/tlog"
 )
 
 var (
@@ -250,7 +251,7 @@ func (d *Data) Reload(node *DataNode) error {
 	if d.redis == nil {
 		return nil
 	}
-	Log("Data: Reload key %v*", node.key)
+	tlog.Log("Data: Reload key %v*", node.key)
 	node.ClearChildren()
 
 	var cursor = "0"

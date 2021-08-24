@@ -7,15 +7,26 @@ import (
 
 type OpLine struct {
 	*tview.Flex
-	selectDrop *tview.DropDown
+	selectDrop  *tview.DropDown
+	saveBtn     *tview.Button
+	saveHandler func()
 }
 
 func NewOpLine() *OpLine {
+	o := &OpLine{}
+	o.init()
+	return o
+}
+
+func (o *OpLine) init() {
 	drop := tview.NewDropDown().SetLabel("Select server:")
 
 	saveBtn := tview.NewButton("+")
 	saveBtn.SetBackgroundColor(tcell.ColorDarkSlateGrey)
 	saveBtn.SetSelectedFunc(func() {
+		if o.saveHandler != nil {
+			o.saveHandler()
+		}
 	})
 
 	flex := tview.NewFlex().
@@ -23,10 +34,9 @@ func NewOpLine() *OpLine {
 		AddItem(drop, 0, 1, false).
 		AddItem(saveBtn, 3, 1, false)
 
-	return &OpLine{
-		Flex:       flex,
-		selectDrop: drop,
-	}
+	o.Flex = flex
+	o.selectDrop = drop
+	o.saveBtn = saveBtn
 }
 
 // AddSelect add select
@@ -43,4 +53,8 @@ func (o *OpLine) SetSelectedFunc(handler func(index int)) {
 	o.selectDrop.SetSelectedFunc(func(text string, index int) {
 		handler(index)
 	})
+}
+
+func (o *OpLine) SetSaveClickFunc(handler func()) {
+	o.saveHandler = handler
 }

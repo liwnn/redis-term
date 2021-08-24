@@ -1,4 +1,4 @@
-package redisterm
+package tlog
 
 import (
 	"io"
