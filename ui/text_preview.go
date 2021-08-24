@@ -7,9 +7,10 @@ import (
 
 type TextPreview struct {
 	*tview.Flex
-	view    *tview.TextView
-	input   *tview.InputField
-	saveBtn *tview.Button
+	view     *tview.TextView
+	input    *tview.InputField
+	saveBtn  *tview.Button
+	saveGrid *tview.Grid
 
 	onSave func(oldValue, newValue string)
 }
@@ -40,8 +41,8 @@ func (p *TextPreview) init() {
 	})
 
 	grid := tview.NewGrid().SetColumns(-1, 8).SetBorders(false).SetGap(0, 2).SetMinSize(5, 5)
-	grid.AddItem(input, 0, 0, 1, 1, 0, 0, false)
-	grid.AddItem(saveBtn, 0, 1, 1, 1, 0, 0, false)
+	//grid.AddItem(input, 0, 0, 1, 1, 0, 0, false)
+	//grid.AddItem(saveBtn, 0, 1, 1, 1, 0, 0, false)
 
 	flex := tview.NewFlex().
 		SetDirection(tview.FlexRow).
@@ -51,6 +52,7 @@ func (p *TextPreview) init() {
 	p.input = input
 	p.view = view
 	p.saveBtn = saveBtn
+	p.saveGrid = grid
 	p.Flex = flex
 }
 
@@ -60,6 +62,14 @@ func (p *TextPreview) SetText(text string) {
 	}
 	p.view.SetText(text)
 	p.input.SetText(text)
+}
+
+func (p *TextPreview) ShowSaveGrid(visible bool) {
+	p.saveGrid.Clear()
+	if visible {
+		p.saveGrid.AddItem(p.input, 0, 0, 1, 1, 0, 0, false)
+		p.saveGrid.AddItem(p.saveBtn, 0, 1, 1, 1, 0, 0, false)
+	}
 }
 
 func (p *TextPreview) SetSaveHandler(f func(string, string)) {

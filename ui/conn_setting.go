@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"redisterm/tlog"
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
@@ -51,6 +52,9 @@ func (s *ConnSetting) init() {
 				address := s.form.GetFormItem(1).(*tview.InputField).GetText()
 				auth := s.form.GetFormItem(2).(*tview.InputField).GetText()
 				t := strings.Split(address, ":")
+				if len(t) != 2 {
+					return
+				}
 				s.ok(Setting{
 					Name: name,
 					Host: t[0],
@@ -72,6 +76,13 @@ func (s *ConnSetting) init() {
 	p.SetMouseCapture(s.onMousecapture)
 	s.Primitive = p
 	s.form = form
+}
+
+func (s *ConnSetting) Init(c Setting) {
+	s.form.GetFormItem(0).(*tview.InputField).SetText(c.Name)
+	s.form.GetFormItem(1).(*tview.InputField).SetText(c.Host + ":" + c.Port)
+	tlog.Log("pass %v", c.Auth)
+	s.form.GetFormItem(2).(*tview.InputField).SetText(c.Auth)
 }
 
 func (s *ConnSetting) onMousecapture(action tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {

@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"io"
+	"redisterm/tlog"
 
 	"github.com/rivo/tview"
 )
@@ -22,7 +23,8 @@ type MainView struct {
 	cmdConsole  *CmdConsole
 	connSetting *ConnSetting
 
-	OnAdd func(s Setting)
+	OnAdd     func(s Setting)
+	GetConfig func() Setting
 }
 
 // NewMainView new
@@ -38,6 +40,13 @@ func (m *MainView) init() {
 	m.opLine = NewOpLine()
 	m.opLine.SetSaveClickFunc(func() {
 		m.pages.ShowPage("conn_setting")
+	})
+	m.opLine.SetEditClickFunc(func() {
+		m.pages.ShowPage("conn_setting")
+		if m.GetConfig != nil {
+			tlog.Log("%v", m.GetConfig())
+			m.connSetting.Init(m.GetConfig())
+		}
 	})
 	m.leftFlexBox = tview.NewFlex().SetDirection(tview.FlexRow)
 	m.rightFlexBox = tview.NewFlex().SetDirection(tview.FlexRow)
@@ -101,7 +110,12 @@ func (m *MainView) GetOpLine() *OpLine {
 
 func (m *MainView) SetTree(tree *tview.TreeView) {
 	m.leftFlexBox.Clear()
-	m.leftFlexBox.AddItem(m.opLine, 1, 0, false)
+	opBar := tview.NewFlex()
+	opBar.AddItem(m.opLine.saveBtn, 5, 0, false)
+	opBar.AddItem(nil, 2, 0, false)
+	opBar.AddItem(m.opLine.editBtn, 5, 0, false)
+	m.leftFlexBox.AddItem(opBar, 1, 0, false)
+	m.leftFlexBox.AddItem(m.opLine.selectDrop, 1, 0, false)
 	m.leftFlexBox.AddItem(tree, 0, 1, true)
 }
 

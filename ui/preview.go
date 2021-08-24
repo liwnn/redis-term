@@ -160,8 +160,9 @@ func (p *Preview) ShowTable(title []TablePageTitle, rows []Row) {
 	p.tablePreview.Update(title, rows)
 }
 
-func (p *Preview) ShowText(text string) {
+func (p *Preview) ShowText(text string, showSave bool) {
 	p.showFlex.Clear()
 	p.showFlex.AddItem(p.textPreview, 0, 1, false)
 	p.textPreview.SetText(text)
+	p.textPreview.ShowSaveGrid(showSave)
 }
