@@ -79,6 +79,7 @@ func (m *MainView) createModal() *tview.Modal {
 
 // ShowModal show modal
 func (m *MainView) ShowModal(text string, okFunc func()) {
+	m.modal.ClearButtons()
 	m.modal.AddButtons([]string{"Ok", "Cancel"})
 	m.modal.SetText(text).
 		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
