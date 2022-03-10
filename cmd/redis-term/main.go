@@ -2,7 +2,8 @@ package main
 
 import (
 	"flag"
-	"redisterm"
+
+	"redisterm/app"
 )
 
 var config string
@@ -14,6 +15,5 @@ func init() {
 func main() {
 	flag.Parse()
 
-	app := redisterm.NewApp(config)
-	app.Run()
+	app.NewApp(config).Run()
 }

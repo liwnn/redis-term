@@ -1,4 +1,4 @@
-package redisterm
+package app
 
 func encodeToHexString(src []byte) string {
 	const hextable = "0123456789ABCDEF"

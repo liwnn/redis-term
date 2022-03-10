@@ -1,4 +1,4 @@
-package redisterm
+package redisapi
 
 import (
 	"errors"
@@ -8,6 +8,14 @@ import (
 	"redisterm/redis"
 	"redisterm/tlog"
 )
+
+// RedisConfig config
+type RedisConfig struct {
+	Name string `json:"name"`
+	Host string `json:"host"`
+	Port int    `json:"port"`
+	Auth string `json:"auth"`
+}
 
 // KVText kv
 type KVText struct {
@@ -177,6 +185,10 @@ func (r *Redis) GetList(key string) []string {
 	}
 	tlog.Log("[Redis] get %v", key)
 	return elems
+}
+
+func (r *Redis) Do(cmd ...string) (*redis.Reply, error) {
+	return r.client.Do(cmd...)
 }
 
 // Select select index

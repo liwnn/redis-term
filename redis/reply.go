@@ -6,30 +6,38 @@ import (
 	"strconv"
 )
 
-// Result reply
-type Result struct {
+// Reply reply
+type Reply struct {
 	object *Object
 }
 
-// NewResult new
-func NewResult(object *Object) *Result {
-	return &Result{
+// NewReply new
+func NewReply(object *Object) *Reply {
+	switch object.Type {
+	case SimpleStr:
+	case Err:
+	case Int:
+	case BulkStr:
+	case Array:
+	case Nil:
+	}
+	return &Reply{
 		object: object,
 	}
 }
 
 // Type return type.
-func (r *Result) Type() Type {
+func (r *Reply) Type() Type {
 	return r.object.Type
 }
 
 // IsNil return if object is nil
-func (r *Result) IsNil() bool {
+func (r *Reply) IsNil() bool {
 	return r.object.Type == Nil
 }
 
 // List returns a string slice.
-func (r *Result) List() ([]string, error) {
+func (r *Reply) List() ([]string, error) {
 	if r.object.Type == Err {
 		return nil, r.object.val.(error)
 	}
@@ -49,7 +57,7 @@ func (r *Result) List() ([]string, error) {
 }
 
 // String return string.
-func (r *Result) String() string {
+func (r *Reply) String() string {
 	switch r.object.Type {
 	case Err:
 		return r.object.val.(error).Error()
@@ -62,7 +70,7 @@ func (r *Result) String() string {
 }
 
 // Byte returns []byte.
-func (r *Result) Byte() []byte {
+func (r *Reply) Byte() []byte {
 	if r.object.Type == Err {
 		return nil
 	}
@@ -73,7 +81,7 @@ func (r *Result) Byte() []byte {
 }
 
 // Int return int
-func (r *Result) Int() (int, error) {
+func (r *Reply) Int() (int, error) {
 	if r.object.Type != Int {
 		return 0, errors.New("not int typ")
 	}
@@ -85,15 +93,15 @@ func (r *Result) Int() (int, error) {
 }
 
 // ToArray to array
-func (r *Result) ToArray() []*Result {
+func (r *Reply) ToArray() []*Reply {
 	if r.object.Type != Array {
 		return nil
 	}
 
 	t := r.object.val.([]*Object)
-	ret := make([]*Result, 0, len(t))
+	ret := make([]*Reply, 0, len(t))
 	for _, v := range t {
-		ret = append(ret, NewResult(v))
+		ret = append(ret, NewReply(v))
 	}
 	return ret
 }

@@ -1,4 +1,4 @@
-package redisterm
+package app
 
 import (
 	"errors"
@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"redisterm/redis"
+	"redisterm/redisapi"
 	"redisterm/tlog"
 )
 
@@ -18,7 +19,7 @@ var (
 
 // Data data
 type Data struct {
-	redis   *Redis
+	redis   *redisapi.Redis
 	address string
 	auth    string
 
@@ -38,7 +39,7 @@ func NewData(addr string, auth string) *Data {
 
 // Connect db
 func (d *Data) Connect() error {
-	client, err := NewRedis(d.address, d.auth)
+	client, err := redisapi.NewRedis(d.address, d.auth)
 	if err != nil {
 		return err
 	}
@@ -75,7 +76,7 @@ func (d *Data) Cmd(w io.Writer, cmd string) error {
 		return nil
 	}
 	args := strings.Fields(cmd)
-	r, err := d.redis.client.Do(args...)
+	r, err := d.redis.Do(args...)
 	if err != nil {
 		return err
 	}

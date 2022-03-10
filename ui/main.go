@@ -105,6 +105,14 @@ func (m *MainView) Run() error {
 	return m.SetRoot(m.pages, true).EnableMouse(true).Run()
 }
 
+func (m *MainView) RefreshOpLine(names []string, handler func(index int)) {
+	m.opLine.ClearAllSelect()
+	for _, name := range names {
+		m.opLine.AddSelect(name)
+	}
+	m.opLine.SetSelectedFunc(handler)
+}
+
 func (m *MainView) GetOpLine() *OpLine {
 	return m.opLine
 }

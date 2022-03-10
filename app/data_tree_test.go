@@ -1,8 +1,8 @@
-package redisterm
+package app
 
 import (
-	"testing"
 	"strconv"
+	"testing"
 )
 
 func TestAddKey(t *testing.T) {
@@ -19,6 +19,6 @@ func BenchmarkAddKey(b *testing.B) {
 	tree := NewDataTree("root")
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		tree.AddKey("a:b:"+strconv.Itoa(i))
+		tree.AddKey("a:b:" + strconv.Itoa(i))
 	}
 }

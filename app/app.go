@@ -1,17 +1,16 @@
-package redisterm
+package app
 
 import (
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"strconv"
 	"time"
 
-	"github.com/rivo/tview"
-
+	"redisterm/redisapi"
 	"redisterm/tlog"
 	"redisterm/ui"
+
+	"github.com/rivo/tview"
 )
 
 // Reference referenct
@@ -186,7 +185,7 @@ func (t *DBTree) updatePreview(o interface{}, valid bool) {
 			rows = append(rows, ui.Row{v})
 		}
 		p.ShowTable(title, rows)
-	case []KVText:
+	case []redisapi.KVText:
 		title := []ui.TablePageTitle{
 			{
 				Name:      "row",
@@ -264,14 +263,6 @@ func (t *DBTree) Close() {
 	t.data.Close()
 }
 
-// RedisConfig config
-type RedisConfig struct {
-	Name string `json:"name"`
-	Host string `json:"host"`
-	Port int    `json:"port"`
-	Auth string `json:"auth"`
-}
-
 type DBShow struct {
 	*DBTree
 	*ui.Preview
@@ -281,86 +272,45 @@ type DBShow struct {
 type App struct {
 	main *ui.MainView
 
-	config RedisConfig
+	cfg    *config
+	config redisapi.RedisConfig
 	tree   *DBShow
 	dbTree map[string]*DBShow
-
-	configPath string
-	configs    []RedisConfig
 }
 
 // NewApp new
 func NewApp(config string) *App {
 	a := &App{
-		main:       ui.NewMainView(),
-		dbTree:     make(map[string]*DBShow),
-		configPath: config,
+		main:   ui.NewMainView(),
+		dbTree: make(map[string]*DBShow),
+		cfg:    newConfig(config),
 	}
-	a.loadConfig()
 	a.init()
 	return a
 }
 
-func (a *App) loadConfig() error {
-	b, err := ioutil.ReadFile(a.configPath)
-	if err != nil {
-		return err
-	}
-
-	var configs []RedisConfig
-	if err := json.Unmarshal(b, &configs); err != nil {
-		return err
-	}
-	a.configs = configs
-	return nil
-}
-
-func (a *App) saveConfig() error {
-	b, err := json.MarshalIndent(a.configs, "", "  ")
-	if err != nil {
-		return err
-	}
-	return ioutil.WriteFile(a.configPath, b, 0)
-}
-
 func (a *App) init() {
 	a.main.GetConfig = a.GetConfig
-	a.main.GetOpLine().SetSelectedFunc(a.Show)
 	a.main.GetCmd().SetEnterHandler(a.onCmdLineEnter)
 	tlog.SetLogger(a.main.GetOutput())
-	for _, config := range a.configs {
-		a.main.GetOpLine().AddSelect(config.Name)
-	}
+	a.main.RefreshOpLine(a.cfg.getDbNames(), a.Show)
 	a.main.OnAdd = func(s ui.Setting) {
 		if s.Name == "" {
 			return
 		}
 		port, _ := strconv.Atoi(s.Port)
-		conf := RedisConfig{
+		conf := redisapi.RedisConfig{
 			Name: s.Name,
 			Host: s.Host,
 			Port: port,
 			Auth: s.Auth,
 		}
-		var old bool
-		for i, v := range a.configs {
-			if v.Host == conf.Host && v.Port == conf.Port {
-				a.configs[i] = conf
-				old = true
-				break
-			}
-		}
-		if old {
-			a.main.GetOpLine().ClearAllSelect()
-			for _, config := range a.configs {
-				a.main.GetOpLine().AddSelect(config.Name)
-			}
-			a.main.GetOpLine().SetSelectedFunc(a.Show)
-		} else {
-			a.configs = append(a.configs, conf)
+		if a.cfg.update(conf) {
 			a.main.GetOpLine().AddSelect(conf.Name)
+		} else {
+			a.main.RefreshOpLine(a.cfg.getDbNames(), a.Show)
 		}
-		if err := a.saveConfig(); err != nil {
+		if err := a.cfg.save(); err != nil {
 			panic(err)
 		}
 		a.config = conf
@@ -382,7 +332,7 @@ func (a *App) Run() {
 
 // Show show
 func (a *App) Show(index int) {
-	config := a.configs[index]
+	config := a.cfg.getConfig(index)
 	address := fmt.Sprintf("%v:%v", config.Host, config.Port)
 	t, ok := a.dbTree[address]
 	if !ok {
