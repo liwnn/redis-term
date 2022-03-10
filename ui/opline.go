@@ -64,6 +64,11 @@ func (o *OpLine) Select(index int) {
 	o.selectDrop.SetCurrentOption(index)
 }
 
+func (o *OpLine) GetSelect() int {
+	index, _ := o.selectDrop.GetCurrentOption()
+	return index
+}
+
 func (o *OpLine) SetSelectedFunc(handler func(index int)) {
 	o.selectDrop.SetSelectedFunc(func(text string, index int) {
 		handler(index)
