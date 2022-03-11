@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"redisterm/model"
 	"redisterm/redisapi"
 	"redisterm/tlog"
 	"redisterm/view"
@@ -84,7 +85,7 @@ func (a *App) Show(index int) {
 		t = NewDBTree(tree, preview)
 		t.ShowModalOK = a.main.ShowModalOK
 		t.ShowModal = a.main.ShowModal
-		data := NewData(address, config.Auth)
+		data := model.NewData(address, config.Auth)
 		if err := data.Connect(); err != nil {
 			tlog.Log("[Show] %v", err)
 		}
@@ -101,7 +102,7 @@ func (a *App) Show(index int) {
 
 func (a *App) onCmdLineEnter(text string) {
 	view := a.main.GetCmd()
-	fmt.Fprintf(view, "[#00aa00]redis%v> [blue]", a.tree.data.index)
+	fmt.Fprintf(view, "[#00aa00]redis%v> [blue]", a.tree.data.Index())
 	fmt.Fprintln(view, text)
 	fmt.Fprintf(view, "[white]")
 	a.tree.data.Cmd(view, text)

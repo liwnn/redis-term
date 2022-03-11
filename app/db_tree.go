@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"log"
+	"redisterm/model"
 	"redisterm/redisapi"
 	"redisterm/tlog"
 	"redisterm/view"
@@ -15,7 +16,7 @@ import (
 type Reference struct {
 	Name  string
 	Index int
-	Data  *DataNode
+	Data  *model.DataNode
 }
 
 // DBTree tree.
@@ -23,7 +24,7 @@ type DBTree struct {
 	tree    *view.Tree
 	preview *view.Preview
 
-	data *Data
+	data *model.Data
 
 	ShowModalOK func(string)
 	ShowModal   func(text string, okFunc func())
@@ -45,7 +46,7 @@ func NewDBTree(tree *view.Tree, preview *view.Preview) *DBTree {
 }
 
 // SetData change db data.
-func (t *DBTree) SetData(name string, data *Data) {
+func (t *DBTree) SetData(name string, data *model.Data) {
 	t.tree.GetRoot().ClearChildren()
 	t.tree.GetRoot().SetText(name)
 	t.data = data
@@ -63,11 +64,11 @@ func (t *DBTree) OnSelected(node *tview.TreeNode) {
 	}
 	tlog.Log("OnSelected: name[%v] index[%v]", typ.Name, typ.Index)
 	if typ.Data != nil && typ.Data.HasChild() {
-		t.tree.SetNodeText(typ.Data.name)
+		t.tree.SetNodeText(typ.Data.Name())
 	}
 	childen := node.GetChildren()
 	if len(childen) == 0 {
-		var dataNodes []*DataNode
+		var dataNodes []*model.DataNode
 		switch typ.Name {
 		case "db":
 			dbs, err := t.data.GetDatabases()
@@ -80,7 +81,7 @@ func (t *DBTree) OnSelected(node *tview.TreeNode) {
 				}
 			}
 			for i, dataNode := range dbs {
-				t.tree.AddNode(dataNode.name, &Reference{
+				t.tree.AddNode(dataNode.Name(), &Reference{
 					Name:  "index",
 					Index: i,
 					Data:  dataNode,
@@ -105,7 +106,7 @@ func (t *DBTree) OnSelected(node *tview.TreeNode) {
 	}
 }
 
-func (t *DBTree) addNode(node *tview.TreeNode, dataNodes []*DataNode) {
+func (t *DBTree) addNode(node *tview.TreeNode, dataNodes []*model.DataNode) {
 	typ := t.getReference(node)
 	for _, dataNode := range dataNodes {
 		r := &Reference{
@@ -114,10 +115,10 @@ func (t *DBTree) addNode(node *tview.TreeNode, dataNodes []*DataNode) {
 		}
 		if dataNode.HasChild() {
 			r.Name = "dir"
-			t.tree.AddNode("▶ "+dataNode.name, r)
+			t.tree.AddNode("▶ "+dataNode.Name(), r)
 		} else {
 			r.Name = "key"
-			t.tree.AddNode(dataNode.name, r)
+			t.tree.AddNode(dataNode.Name(), r)
 		}
 	}
 }
@@ -132,23 +133,23 @@ func (t *DBTree) OnChanged(node *tview.TreeNode) {
 		if typ.Name == "index" {
 			tlog.Log("OnChanged: %v - %v", typ.Name, typ.Index)
 		} else {
-			tlog.Log("OnChanged: %v - %v", typ.Name, typ.Data.key)
+			tlog.Log("OnChanged: %v - %v", typ.Name, typ.Data.Key())
 		}
 		t.preview.SetOpBtnVisible(true)
 	}
 
 	if typ.Name == "key" {
-		if !typ.Data.removed {
+		if !typ.Data.IsRemoved() {
 			t.data.Select(typ.Index)
 			begin := time.Now()
-			o := t.data.GetValue(typ.Data.key)
+			o := t.data.GetValue(typ.Data.Key())
 			tlog.Log("redis value time cost %v", time.Since(begin))
 			t.updatePreview(o, true)
 		} else {
-			t.updatePreview(fmt.Sprintf("%v was removed", typ.Data.key), false)
+			t.updatePreview(fmt.Sprintf("%v was removed", typ.Data.Key()), false)
 		}
 		t.preview.SetDeleteText("Delete")
-		t.preview.SetKey(typ.Data.key)
+		t.preview.SetKey(typ.Data.Key())
 	} else {
 		if typ.Name == "index" {
 			t.preview.SetDeleteText("Flush")
@@ -218,15 +219,16 @@ func (t *DBTree) reloadSelectKey() {
 	if reference == nil {
 		return
 	}
-	tlog.Log("reload %v", reference.Data.key)
+	key := reference.Data.Key()
+	tlog.Log("reload %v", key)
 
 	if reference.Name == "key" {
 		t.data.Select(reference.Index)
-		o := t.data.GetValue(reference.Data.key)
+		o := t.data.GetValue(key)
 		if o == nil {
-			reference.Data.removed = true
+			reference.Data.SetRemoved()
 			t.tree.SetNodeRemoved()
-			t.updatePreview(fmt.Sprintf("%v was removed", reference.Data.key), false)
+			t.updatePreview(fmt.Sprintf("%v was removed", key), false)
 			t.preview.SetDeleteText("Delete")
 		} else {
 			t.updatePreview(o, true)
@@ -238,7 +240,7 @@ func (t *DBTree) reloadSelectKey() {
 	if err := t.data.Reload(reference.Data); err != nil {
 		tlog.Log("[App] err %v", err)
 		node.SetExpanded(false)
-		node.SetText(reference.Data.name)
+		node.SetText(reference.Data.Name())
 	}
 
 	childen := reference.Data.GetChildren()
@@ -249,14 +251,14 @@ func (t *DBTree) reloadSelectKey() {
 		}
 		if dataNode.HasChild() {
 			r.Name = "dir"
-			t.tree.AddNode("▶ "+dataNode.name, r)
+			t.tree.AddNode("▶ "+dataNode.Name(), r)
 		} else {
 			r.Name = "key"
-			t.tree.AddNode(dataNode.name, r)
+			t.tree.AddNode(dataNode.Name(), r)
 		}
 	}
 
-	if reference.Data.removed {
+	if reference.Data.IsRemoved() {
 		t.tree.SetNodeRemoved()
 	}
 }
@@ -270,15 +272,16 @@ func (t *DBTree) renameSelectKey() {
 		return
 	}
 
-	notice := fmt.Sprintf("Rename %v->%v", reference.Data.key, t.preview.GetKey())
+	key := reference.Data.Key()
+	notice := fmt.Sprintf("Rename %v->%v", key, t.preview.GetKey())
 	t.ShowModal(notice, func() {
-		if reference.Data.key == t.preview.GetKey() {
+		if key == t.preview.GetKey() {
 			return
 		}
 
-		tlog.Log("rename %v %v", reference.Data.key, t.preview.GetKey())
+		tlog.Log("rename %v %v", key, t.preview.GetKey())
 		t.data.Rename(reference.Data, t.preview.GetKey())
-		t.getCurrentNode().SetText(reference.Data.name)
+		t.getCurrentNode().SetText(reference.Data.Name())
 	})
 }
 
@@ -290,11 +293,11 @@ func (t *DBTree) deleteKey() {
 	var notice string
 	switch typ.Name {
 	case "key":
-		notice = "Delete " + typ.Data.key + " ?"
+		notice = "Delete " + typ.Data.Key() + " ?"
 	case "index":
 		notice = fmt.Sprintf("FlushDB index:%v?", typ.Index)
 	case "dir":
-		notice = "Delete " + typ.Data.key + "* ?"
+		notice = "Delete " + typ.Data.Key() + "* ?"
 	}
 	t.ShowModal(notice, func() {
 		go t.deleteSelectKey(typ)
@@ -344,22 +347,22 @@ func (t *DBTree) getCurrentNode() *tview.TreeNode {
 func (t *DBTree) deleteSelectKey(typ *Reference) {
 	switch typ.Name {
 	case "key":
-		tlog.Log("delete %v", typ.Data.key)
+		tlog.Log("delete %v", typ.Data.Key())
 		if err := t.data.Delete(typ.Data); err != nil {
 			tlog.Log("DBTree deleteSelectKey %v", err)
 			return
 		}
 		t.tree.SetNodeRemoved()
-		t.updatePreview(fmt.Sprintf("%v was removed", typ.Data.key), false)
+		t.updatePreview(fmt.Sprintf("%v was removed", typ.Data.Key()), false)
 	case "index":
 		if err := t.data.FlushDB(typ.Data); err != nil {
 			tlog.Log("DBTree deleteSelectKey %v", err)
 			return
 		}
 		t.getCurrentNode().ClearChildren()
-		t.getCurrentNode().SetText(typ.Data.name)
+		t.getCurrentNode().SetText(typ.Data.Name())
 	case "dir":
-		tlog.Log("delete %v", typ.Data.key)
+		tlog.Log("delete %v", typ.Data.Key())
 		if err := t.data.Delete(typ.Data); err != nil {
 			tlog.Log("DBTree deleteSelectKey %v", err)
 			return
