@@ -12,10 +12,10 @@ import (
 
 // App app
 type App struct {
+	cfg  *config
 	main *view.MainView
+	tree *DBTree
 
-	cfg    *config
-	tree   *DBTree
 	dbTree map[string]*DBTree
 }
 
@@ -31,11 +31,16 @@ func NewApp(config string) *App {
 }
 
 func (a *App) init() {
-	a.main.GetConfig = a.GetConfig
-	a.main.GetCmd().SetEnterHandler(a.onCmdLineEnter)
 	tlog.SetLogger(a.main.GetOutput())
-	a.main.RefreshOpLine(a.cfg.getDbNames(), a.Show)
-	a.main.OnAdd = func(s view.Setting) {
+
+	a.main.GetOpLine().SetEditClickFunc(func() {
+		setting := a.GetConfig()
+		a.main.ShowConnSetting(setting)
+		tlog.Log("[App] init Edit Click: %v", setting)
+	})
+
+	a.main.GetConnSetting().SetOKHandler(func(s view.Setting) {
+		a.main.HideConnSetting()
 		if s.Name == "" {
 			return
 		}
@@ -54,7 +59,9 @@ func (a *App) init() {
 		if err := a.cfg.save(); err != nil {
 			panic(err)
 		}
-	}
+	})
+	a.main.GetCmd().SetEnterHandler(a.onCmdLineEnter)
+	a.main.RefreshOpLine(a.cfg.getDbNames(), a.Show)
 }
 
 // Run run

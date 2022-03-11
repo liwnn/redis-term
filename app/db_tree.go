@@ -3,11 +3,12 @@ package app
 import (
 	"fmt"
 	"log"
+	"time"
+
 	"redisterm/model"
 	"redisterm/redisapi"
 	"redisterm/tlog"
 	"redisterm/view"
-	"time"
 
 	"github.com/rivo/tview"
 )

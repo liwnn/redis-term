@@ -3,7 +3,6 @@ package view
 import (
 	"fmt"
 	"io"
-	"redisterm/tlog"
 
 	"github.com/rivo/tview"
 )
@@ -22,9 +21,6 @@ type MainView struct {
 	opLine      *OpLine
 	cmdConsole  *CmdConsole
 	connSetting *ConnSetting
-
-	OnAdd     func(s Setting)
-	GetConfig func() Setting
 }
 
 // NewMainView new
@@ -41,13 +37,6 @@ func (m *MainView) init() {
 	m.opLine.SetSaveClickFunc(func() {
 		m.pages.ShowPage("conn_setting")
 	})
-	m.opLine.SetEditClickFunc(func() {
-		m.pages.ShowPage("conn_setting")
-		if m.GetConfig != nil {
-			tlog.Log("%v", m.GetConfig())
-			m.connSetting.Init(m.GetConfig())
-		}
-	})
 	m.leftFlexBox = tview.NewFlex().SetDirection(tview.FlexRow)
 	m.rightFlexBox = tview.NewFlex().SetDirection(tview.FlexRow)
 	m.modal = m.createModal()
@@ -57,12 +46,6 @@ func (m *MainView) init() {
 	m.connSetting = NewConnSetting()
 	m.connSetting.SetCancelHandler(func() {
 		m.pages.HidePage("conn_setting")
-	})
-	m.connSetting.SetOKHandler(func(s Setting) {
-		m.pages.HidePage("conn_setting")
-		if m.OnAdd != nil {
-			m.OnAdd(s)
-		}
 	})
 	m.pages = tview.NewPages()
 	m.pages.AddPage("main", mainFlexBox, true, true)
@@ -75,6 +58,15 @@ func (m *MainView) init() {
 func (m *MainView) createModal() *tview.Modal {
 	modal := tview.NewModal()
 	return modal
+}
+
+func (m *MainView) ShowConnSetting(cfg Setting) {
+	m.pages.ShowPage("conn_setting")
+	m.connSetting.Init(cfg)
+}
+
+func (m *MainView) HideConnSetting() {
+	m.pages.HidePage("conn_setting")
 }
 
 // ShowModal show modal
@@ -115,6 +107,10 @@ func (m *MainView) RefreshOpLine(names []string, handler func(index int)) {
 
 func (m *MainView) GetOpLine() *OpLine {
 	return m.opLine
+}
+
+func (m *MainView) GetConnSetting() *ConnSetting {
+	return m.connSetting
 }
 
 func (m *MainView) SetTree(tree *tview.TreeView) {
