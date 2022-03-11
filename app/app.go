@@ -6,12 +6,12 @@ import (
 
 	"redisterm/redisapi"
 	"redisterm/tlog"
-	"redisterm/ui"
+	"redisterm/view"
 )
 
 // App app
 type App struct {
-	main *ui.MainView
+	main *view.MainView
 
 	cfg    *config
 	tree   *DBTree
@@ -21,7 +21,7 @@ type App struct {
 // NewApp new
 func NewApp(config string) *App {
 	a := &App{
-		main:   ui.NewMainView(),
+		main:   view.NewMainView(),
 		dbTree: make(map[string]*DBTree),
 		cfg:    newConfig(config),
 	}
@@ -34,7 +34,7 @@ func (a *App) init() {
 	a.main.GetCmd().SetEnterHandler(a.onCmdLineEnter)
 	tlog.SetLogger(a.main.GetOutput())
 	a.main.RefreshOpLine(a.cfg.getDbNames(), a.Show)
-	a.main.OnAdd = func(s ui.Setting) {
+	a.main.OnAdd = func(s view.Setting) {
 		if s.Name == "" {
 			return
 		}
@@ -75,11 +75,11 @@ func (a *App) Show(index int) {
 	address := fmt.Sprintf("%v:%v", config.Host, config.Port)
 	t, ok := a.dbTree[address]
 	if !ok {
-		tree := ui.NewTree("db")
+		tree := view.NewTree("db")
 		tree.GetRoot().SetReference(&Reference{
 			Name: "db",
 		})
-		preview := ui.NewPreview()
+		preview := view.NewPreview()
 
 		t = NewDBTree(tree, preview)
 		t.ShowModalOK = a.main.ShowModalOK
@@ -107,10 +107,10 @@ func (a *App) onCmdLineEnter(text string) {
 	a.tree.data.Cmd(view, text)
 }
 
-func (a *App) GetConfig() ui.Setting {
+func (a *App) GetConfig() view.Setting {
 	index := a.main.GetOpLine().GetSelect()
 	config := a.cfg.getConfig(index)
-	return ui.Setting{
+	return view.Setting{
 		Name: config.Name,
 		Host: config.Host,
 		Port: strconv.Itoa(config.Port),

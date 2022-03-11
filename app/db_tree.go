@@ -5,7 +5,7 @@ import (
 	"log"
 	"redisterm/redisapi"
 	"redisterm/tlog"
-	"redisterm/ui"
+	"redisterm/view"
 	"time"
 
 	"github.com/rivo/tview"
@@ -20,8 +20,8 @@ type Reference struct {
 
 // DBTree tree.
 type DBTree struct {
-	tree    *ui.Tree
-	preview *ui.Preview
+	tree    *view.Tree
+	preview *view.Preview
 
 	data *Data
 
@@ -30,7 +30,7 @@ type DBTree struct {
 }
 
 // NewDBTree new
-func NewDBTree(tree *ui.Tree, preview *ui.Preview) *DBTree {
+func NewDBTree(tree *view.Tree, preview *view.Preview) *DBTree {
 	dbTree := &DBTree{
 		tree:    tree,
 		preview: preview,
@@ -172,7 +172,7 @@ func (t *DBTree) updatePreview(o interface{}, valid bool) {
 			p.SetSizeText(fmt.Sprintf("Size: %d bytes", len(text)))
 		}
 	case []string:
-		title := []ui.TablePageTitle{
+		title := []view.TablePageTitle{
 			{
 				Name:      "row",
 				Expansion: 1,
@@ -183,13 +183,13 @@ func (t *DBTree) updatePreview(o interface{}, valid bool) {
 			},
 		}
 
-		rows := make([]ui.Row, 0, len(h))
+		rows := make([]view.Row, 0, len(h))
 		for _, v := range h {
-			rows = append(rows, ui.Row{v})
+			rows = append(rows, view.Row{v})
 		}
 		p.ShowTable(title, rows)
 	case []redisapi.KVText:
-		title := []ui.TablePageTitle{
+		title := []view.TablePageTitle{
 			{
 				Name:      "row",
 				Expansion: 1,
@@ -203,9 +203,9 @@ func (t *DBTree) updatePreview(o interface{}, valid bool) {
 				Expansion: 24,
 			},
 		}
-		rows := make([]ui.Row, 0, len(h))
+		rows := make([]view.Row, 0, len(h))
 		for _, v := range h {
-			rows = append(rows, ui.Row{v.Key, v.Value})
+			rows = append(rows, view.Row{v.Key, v.Value})
 		}
 		p.ShowTable(title, rows)
 	}
