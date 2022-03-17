@@ -187,8 +187,8 @@ func (r *Redis) GetList(key string) []string {
 	return elems
 }
 
-func (r *Redis) Do(cmd ...string) (*redis.Reply, error) {
-	return r.client.Do(cmd...)
+func (r *Redis) Do(key string, cmd ...string) (*redis.Reply, error) {
+	return r.client.Do(key, cmd...)
 }
 
 // Select select index

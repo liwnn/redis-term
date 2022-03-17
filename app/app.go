@@ -104,14 +104,15 @@ func (a *App) Show(index int) {
 
 	a.main.SetTree(a.tree.tree.TreeView)
 	a.main.SetPreview(a.tree.preview.FlexBox())
-	a.onCmdLineEnter("")
+
+	view := a.main.GetCmd()
+	view.SetPromt(fmt.Sprintf("[#00aa00]redis%v> [blue][white]", a.tree.data.Index()))
+	view.ShowPromt()
 }
 
 func (a *App) onCmdLineEnter(text string) {
 	view := a.main.GetCmd()
-	fmt.Fprintf(view, "[#00aa00]redis%v> [blue]", a.tree.data.Index())
 	fmt.Fprintln(view, text)
-	fmt.Fprintf(view, "[white]")
 	a.tree.data.Cmd(view, text)
 }
 

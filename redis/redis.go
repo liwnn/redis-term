@@ -1,7 +1,6 @@
 package redis
 
 import (
-	"fmt"
 	"net"
 	"time"
 )
@@ -28,15 +27,11 @@ func NewClient(conn net.Conn) *Client {
 }
 
 // Do do
-func (r *Client) Do(cmd ...string) (*Reply, error) {
-	if len(cmd) == 0 {
-		return nil, fmt.Errorf("empty")
-	}
-
+func (r *Client) Do(key string, cmd ...string) (*Reply, error) {
 	if r.timeout > 0 {
 		r.conn.SetWriteDeadline(time.Now().Add(r.timeout))
 	}
-	if err := r.writer.WriteCommand(cmd...); err != nil {
+	if err := r.writer.WriteCommand(key, cmd...); err != nil {
 		return nil, err
 	}
 

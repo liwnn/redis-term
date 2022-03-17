@@ -76,12 +76,17 @@ func (d *Data) Cmd(w io.Writer, cmd string) error {
 		return nil
 	}
 	args := strings.Fields(cmd)
-	r, err := d.redis.Do(args...)
+	if len(args) == 0 {
+		return fmt.Errorf("cmd is empty")
+	}
+	r, err := d.redis.Do(args[0], args[1:]...)
 	if err != nil {
 		return err
 	}
 
 	switch r.Type() {
+	case redis.Nil:
+		fmt.Fprintln(w, "(nil)")
 	case redis.Int:
 		v, err := r.Int()
 		if err != nil {

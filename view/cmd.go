@@ -1,6 +1,8 @@
 package view
 
 import (
+	"fmt"
+
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
@@ -12,6 +14,7 @@ type CmdConsole struct {
 
 	onCmdLineEnter func(string)
 	title          string
+	promt          string
 }
 
 func NewCmdConsole(title string) *CmdConsole {
@@ -53,6 +56,7 @@ func (c *CmdConsole) OnEnter(event *tcell.EventKey) *tcell.EventKey {
 			c.onCmdLineEnter(text)
 		}
 
+		fmt.Fprintf(c.view, c.promt)
 		c.view.ScrollToEnd()
 		return nil
 	}
@@ -73,4 +77,13 @@ func (c *CmdConsole) View() *tview.TextView {
 
 func (c *CmdConsole) Write(p []byte) (n int, err error) {
 	return c.view.Write(p)
+}
+
+func (c *CmdConsole) SetPromt(promt string) {
+	c.promt = promt
+}
+
+func (c *CmdConsole) ShowPromt() {
+	fmt.Fprintf(c.view, c.promt)
+	c.view.ScrollToEnd()
 }

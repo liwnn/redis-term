@@ -53,10 +53,18 @@ func (t *DBTree) SetData(name string, data *model.Data) {
 	t.data = data
 }
 
+func (t *DBTree) changeDB(index int) error {
+	err := t.data.Select(index)
+	if err == nil {
+		return nil
+	}
+	return err
+}
+
 // OnSelected on select
 func (t *DBTree) OnSelected(node *tview.TreeNode) {
 	typ := t.getReference(node)
-	err := t.data.Select(typ.Index)
+	err := t.changeDB(typ.Index)
 	if err != nil {
 		if err := t.data.Connect(); err != nil {
 			tlog.Log("[OnSelected] %v", err)
@@ -141,7 +149,7 @@ func (t *DBTree) OnChanged(node *tview.TreeNode) {
 
 	if typ.Name == "key" {
 		if !typ.Data.IsRemoved() {
-			t.data.Select(typ.Index)
+			t.changeDB(typ.Index)
 			begin := time.Now()
 			o := t.data.GetValue(typ.Data.Key())
 			tlog.Log("redis value time cost %v", time.Since(begin))
@@ -224,7 +232,7 @@ func (t *DBTree) reloadSelectKey() {
 	tlog.Log("reload %v", key)
 
 	if reference.Name == "key" {
-		t.data.Select(reference.Index)
+		t.changeDB(reference.Index)
 		o := t.data.GetValue(key)
 		if o == nil {
 			reference.Data.SetRemoved()
