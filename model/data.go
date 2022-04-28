@@ -33,7 +33,6 @@ func NewData(addr string, auth string) *Data {
 		address: addr,
 		auth:    auth,
 	}
-
 	return r
 }
 

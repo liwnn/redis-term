@@ -14,9 +14,17 @@ type config struct {
 func newConfig(filename string) *config {
 	c := &config{
 		filename: filename,
+		configs: []redisapi.RedisConfig{
+			{
+				Name: "127.0.0.1:6379",
+				Host: "127.0.0.1",
+				Port: 6379,
+				Auth: "",
+			},
+		},
 	}
 	if err := c.load(); err != nil {
-		panic(err)
+
 	}
 	return c
 }
@@ -40,7 +48,8 @@ func (c *config) save() error {
 	if err != nil {
 		return err
 	}
-	return ioutil.WriteFile(c.filename, b, 0)
+
+	return ioutil.WriteFile(c.filename, b, 0666)
 }
 
 func (c *config) getConfig(index int) redisapi.RedisConfig {

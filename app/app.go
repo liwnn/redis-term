@@ -96,7 +96,7 @@ func (a *App) Show(index int) {
 		if err := data.Connect(); err != nil {
 			tlog.Log("[Show] %v", err)
 		}
-		t.SetData(config.Host, data)
+		t.SetData(fmt.Sprintf("%s:%v", config.Host, config.Port), data)
 		a.dbTree[address] = t
 	}
 

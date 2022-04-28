@@ -9,7 +9,7 @@ import (
 var config string
 
 func init() {
-	flag.StringVar(&config, "config", "./config.json", "config")
+	flag.StringVar(&config, "config", ".redis-term.json", "config")
 }
 
 func main() {
