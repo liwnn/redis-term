@@ -7,6 +7,12 @@ import (
 	"github.com/rivo/tview"
 )
 
+const (
+	PromptColor = "[#00aa00]"
+	InputColor  = "[blue]"
+	ResultColor = "[white]"
+)
+
 type CmdConsole struct {
 	*tview.Flex
 	view  *tview.TextView
@@ -33,8 +39,8 @@ func (c *CmdConsole) init() {
 
 	cmdLine := tview.NewInputField()
 	cmdLine.SetPlaceholder("input command")
-	cmdLine.SetFieldBackgroundColor(tcell.ColorDarkSlateGrey)
-	cmdLine.SetPlaceholderTextColor(tcell.ColorDimGrey)
+	cmdLine.SetPlaceholderStyle(tcell.StyleDefault.Foreground(tcell.Color245).Background(tcell.Color238))
+	cmdLine.SetFieldStyle(tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.Color238))
 	cmdLine.SetInputCapture(c.OnEnter)
 
 	flex := tview.NewFlex().
@@ -56,6 +62,7 @@ func (c *CmdConsole) OnEnter(event *tcell.EventKey) *tcell.EventKey {
 
 		fmt.Fprintln(c, text)
 		if c.onCmdLineEnter != nil {
+			fmt.Fprint(c.view, ResultColor)
 			c.onCmdLineEnter(text)
 		}
 
@@ -100,6 +107,6 @@ func (c *CmdConsole) SetIndex(index int) {
 }
 
 func (c *CmdConsole) printPromt() {
-	fmt.Fprintf(c.view, "[#00aa00]%v:%v> [blue]", c.address, c.index)
+	fmt.Fprintf(c.view, "%v%v:%v> %v", PromptColor, c.address, c.index, InputColor)
 	c.view.ScrollToEnd()
 }

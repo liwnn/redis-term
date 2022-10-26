@@ -1,19 +1,23 @@
-package app
+package config
 
 import (
 	"encoding/json"
-	"io/ioutil"
+	"os"
 
 	"github.com/liwnn/redisterm/redisapi"
 )
 
-type config struct {
+type Config struct {
 	filename string
 	configs  []redisapi.RedisConfig
 }
 
-func newConfig(filename string) *config {
-	c := &config{
+func NewConfig(filename string) (*Config, error) {
+	if filename[0] == '~' {
+		filename = os.Getenv("HOME") + filename[1:]
+	}
+
+	c := &Config{
 		filename: filename,
 		configs: []redisapi.RedisConfig{
 			{
@@ -25,13 +29,13 @@ func newConfig(filename string) *config {
 		},
 	}
 	if err := c.load(); err != nil {
-
+		return nil, err
 	}
-	return c
+	return c, nil
 }
 
-func (c *config) load() error {
-	b, err := ioutil.ReadFile(c.filename)
+func (c *Config) load() error {
+	b, err := os.ReadFile(c.filename)
 	if err != nil {
 		return err
 	}
@@ -44,20 +48,20 @@ func (c *config) load() error {
 	return nil
 }
 
-func (c *config) save() error {
+func (c *Config) Save() error {
 	b, err := json.MarshalIndent(c.configs, "", "  ")
 	if err != nil {
 		return err
 	}
 
-	return ioutil.WriteFile(c.filename, b, 0666)
+	return os.WriteFile(c.filename, b, 0666)
 }
 
-func (c *config) getConfig(index int) redisapi.RedisConfig {
+func (c *Config) GetConfig(index int) redisapi.RedisConfig {
 	return c.configs[index]
 }
 
-func (c *config) getDbNames() []string {
+func (c *Config) GetDbNames() []string {
 	var s = make([]string, 0, len(c.configs))
 	for _, v := range c.configs {
 		s = append(s, v.Name)
@@ -65,7 +69,7 @@ func (c *config) getDbNames() []string {
 	return s
 }
 
-func (c *config) update(conf redisapi.RedisConfig) bool {
+func (c *Config) Update(conf redisapi.RedisConfig) bool {
 	for i, v := range c.configs {
 		if v.Host == conf.Host && v.Port == conf.Port {
 			c.configs[i] = conf

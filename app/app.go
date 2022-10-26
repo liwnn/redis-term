@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/liwnn/redisterm/config"
 	"github.com/liwnn/redisterm/model"
 	"github.com/liwnn/redisterm/redisapi"
 	"github.com/liwnn/redisterm/tlog"
@@ -13,7 +14,7 @@ import (
 
 // App app
 type App struct {
-	cfg  *config
+	cfg  *config.Config
 	main *view.MainView
 	tree *DBTree
 
@@ -21,11 +22,15 @@ type App struct {
 }
 
 // NewApp new
-func NewApp(config string) *App {
+func NewApp(cfgFile string) *App {
+	cfg, err := config.NewConfig(cfgFile)
+	if err != nil {
+		panic(err)
+	}
 	a := &App{
 		main:   view.NewMainView(),
 		dbTree: make(map[string]*DBTree),
-		cfg:    newConfig(config),
+		cfg:    cfg,
 	}
 	a.init()
 	return a
@@ -52,17 +57,17 @@ func (a *App) init() {
 			Port: port,
 			Auth: s.Auth,
 		}
-		if a.cfg.update(conf) {
+		if a.cfg.Update(conf) {
 			a.main.GetOpLine().AddSelect(conf.Name)
 		} else {
-			a.main.RefreshOpLine(a.cfg.getDbNames(), a.Show)
+			a.main.RefreshOpLine(a.cfg.GetDbNames(), a.Show)
 		}
-		if err := a.cfg.save(); err != nil {
+		if err := a.cfg.Save(); err != nil {
 			panic(err)
 		}
 	})
 	a.main.GetCmd().SetEnterHandler(a.onCmdLineEnter)
-	a.main.RefreshOpLine(a.cfg.getDbNames(), a.Show)
+	a.main.RefreshOpLine(a.cfg.GetDbNames(), a.Show)
 }
 
 // Run run
@@ -80,7 +85,7 @@ func (a *App) Run() {
 
 // Show show
 func (a *App) Show(index int) {
-	config := a.cfg.getConfig(index)
+	config := a.cfg.GetConfig(index)
 	address := fmt.Sprintf("%v:%v", config.Host, config.Port)
 	t, ok := a.dbTree[address]
 	if !ok {
@@ -133,7 +138,7 @@ func (a *App) onCmdLineEnter(text string) {
 
 func (a *App) GetConfig() view.Setting {
 	index := a.main.GetOpLine().GetSelect()
-	config := a.cfg.getConfig(index)
+	config := a.cfg.GetConfig(index)
 	return view.Setting{
 		Name: config.Name,
 		Host: config.Host,

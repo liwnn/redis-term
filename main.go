@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"os"
 
 	"github.com/liwnn/redisterm/app"
 )
@@ -15,10 +14,6 @@ func init() {
 
 func main() {
 	flag.Parse()
-
-	if config[0] == '~' {
-		config = os.Getenv("HOME") + config[1:]
-	}
 
 	app.NewApp(config).Run()
 }
