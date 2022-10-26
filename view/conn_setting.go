@@ -1,8 +1,9 @@
 package view
 
 import (
-	"redisterm/tlog"
 	"strings"
+
+	"github.com/liwnn/redisterm/tlog"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"

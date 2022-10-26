@@ -14,7 +14,9 @@ type CmdConsole struct {
 
 	onCmdLineEnter func(string)
 	title          string
-	promt          string
+
+	address string
+	index   int
 }
 
 func NewCmdConsole(title string) *CmdConsole {
@@ -52,12 +54,12 @@ func (c *CmdConsole) OnEnter(event *tcell.EventKey) *tcell.EventKey {
 		text := c.input.GetText()
 		c.input.SetText("")
 
+		fmt.Fprintln(c, text)
 		if c.onCmdLineEnter != nil {
 			c.onCmdLineEnter(text)
 		}
 
-		fmt.Fprintf(c.view, c.promt)
-		c.view.ScrollToEnd()
+		c.printPromt()
 		return nil
 	}
 	return event
@@ -79,11 +81,25 @@ func (c *CmdConsole) Write(p []byte) (n int, err error) {
 	return c.view.Write(p)
 }
 
-func (c *CmdConsole) SetPromt(promt string) {
-	c.promt = promt
+func (c *CmdConsole) SetPromt(address string, index int) {
+	if c.address == address && c.index == index {
+		return
+	}
+
+	if c.address != "" {
+		fmt.Fprintf(c.view, "\n")
+	}
+	c.address = address
+	c.index = index
+
+	c.printPromt()
 }
 
-func (c *CmdConsole) ShowPromt() {
-	fmt.Fprintf(c.view, c.promt)
+func (c *CmdConsole) SetIndex(index int) {
+	c.index = index
+}
+
+func (c *CmdConsole) printPromt() {
+	fmt.Fprintf(c.view, "[#00aa00]%v:%v> [blue]", c.address, c.index)
 	c.view.ScrollToEnd()
 }

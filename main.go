@@ -4,7 +4,7 @@ import (
 	"flag"
 	"os"
 
-	"redisterm/app"
+	"github.com/liwnn/redisterm/app"
 )
 
 var config string

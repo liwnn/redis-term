@@ -3,11 +3,12 @@ package app
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
-	"redisterm/model"
-	"redisterm/redisapi"
-	"redisterm/tlog"
-	"redisterm/view"
+	"github.com/liwnn/redisterm/model"
+	"github.com/liwnn/redisterm/redisapi"
+	"github.com/liwnn/redisterm/tlog"
+	"github.com/liwnn/redisterm/view"
 )
 
 // App app
@@ -105,15 +106,29 @@ func (a *App) Show(index int) {
 	a.main.SetTree(a.tree.tree.TreeView)
 	a.main.SetPreview(a.tree.preview.FlexBox())
 
-	view := a.main.GetCmd()
-	view.SetPromt(fmt.Sprintf("[#00aa00]redis%v> [blue][white]", a.tree.data.Index()))
-	view.ShowPromt()
+	a.main.GetCmd().SetPromt(address, a.tree.data.Index())
 }
 
 func (a *App) onCmdLineEnter(text string) {
+	args := strings.Fields(text)
+	if len(args) == 0 {
+		return
+	}
+	cmd := args[0]
 	view := a.main.GetCmd()
-	fmt.Fprintln(view, text)
-	a.tree.data.Cmd(view, text)
+	if err := a.tree.data.Cmd(view, cmd, args[1:]...); err != nil {
+		fmt.Fprintln(view, err)
+	} else {
+		switch strings.ToUpper(cmd) {
+		case "SELECT":
+			index, err := strconv.Atoi(args[1])
+			if err != nil {
+				fmt.Fprintln(view, err)
+			} else {
+				view.SetIndex(index)
+			}
+		}
+	}
 }
 
 func (a *App) GetConfig() view.Setting {

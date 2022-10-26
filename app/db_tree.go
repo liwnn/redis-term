@@ -5,10 +5,10 @@ import (
 	"log"
 	"time"
 
-	"redisterm/model"
-	"redisterm/redisapi"
-	"redisterm/tlog"
-	"redisterm/view"
+	"github.com/liwnn/redisterm/model"
+	"github.com/liwnn/redisterm/redisapi"
+	"github.com/liwnn/redisterm/tlog"
+	"github.com/liwnn/redisterm/view"
 
 	"github.com/rivo/tview"
 )
@@ -54,11 +54,7 @@ func (t *DBTree) SetData(name string, data *model.Data) {
 }
 
 func (t *DBTree) changeDB(index int) error {
-	err := t.data.Select(index)
-	if err == nil {
-		return nil
-	}
-	return err
+	return t.data.Select(index)
 }
 
 // OnSelected on select

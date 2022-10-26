@@ -3,7 +3,8 @@ package app
 import (
 	"encoding/json"
 	"io/ioutil"
-	"redisterm/redisapi"
+
+	"github.com/liwnn/redisterm/redisapi"
 )
 
 type config struct {

@@ -5,8 +5,8 @@ import (
 	"net"
 	"strconv"
 
-	"redisterm/redis"
-	"redisterm/tlog"
+	"github.com/liwnn/redisterm/redis"
+	"github.com/liwnn/redisterm/tlog"
 )
 
 // RedisConfig config
@@ -187,8 +187,9 @@ func (r *Redis) GetList(key string) []string {
 	return elems
 }
 
-func (r *Redis) Do(key string, cmd ...string) (*redis.Reply, error) {
-	return r.client.Do(key, cmd...)
+func (r *Redis) Do(cmd string, params ...string) (*redis.Reply, error) {
+	tlog.Log("[Redis] cmd[%v] params[%v]", cmd, params)
+	return r.client.Do(cmd, params...)
 }
 
 // Select select index

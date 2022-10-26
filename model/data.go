@@ -8,9 +8,9 @@ import (
 	"strconv"
 	"strings"
 
-	"redisterm/redis"
-	"redisterm/redisapi"
-	"redisterm/tlog"
+	"github.com/liwnn/redisterm/redis"
+	"github.com/liwnn/redisterm/redisapi"
+	"github.com/liwnn/redisterm/tlog"
 )
 
 var (
@@ -70,15 +70,12 @@ func (d *Data) GetDatabases() ([]*DataNode, error) {
 }
 
 // Cmd cmd
-func (d *Data) Cmd(w io.Writer, cmd string) error {
+func (d *Data) Cmd(w io.Writer, cmd string, params ...string) error {
 	if d.redis == nil {
-		return nil
+		return errors.New("Connection error: Cannot connect to redis-server.")
 	}
-	args := strings.Fields(cmd)
-	if len(args) == 0 {
-		return fmt.Errorf("cmd is empty")
-	}
-	r, err := d.redis.Do(args[0], args[1:]...)
+
+	r, err := d.redis.Do(cmd, params...)
 	if err != nil {
 		return err
 	}
@@ -100,7 +97,7 @@ func (d *Data) Cmd(w io.Writer, cmd string) error {
 			fmt.Fprintln(w, v)
 		}
 	default:
-		fmt.Fprintf(w, "cmd no implement %v\n", r.Type())
+		return fmt.Errorf("cmd no implement %v", r.Type())
 	}
 	return nil
 }
