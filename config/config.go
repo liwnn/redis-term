@@ -28,8 +28,10 @@ func NewConfig(filename string) (*Config, error) {
 			},
 		},
 	}
-	if err := c.load(); err != nil {
-		return nil, err
+	if _, err := os.Stat(c.filename); os.IsExist(err) {
+		if err := c.load(); err != nil {
+			return nil, err
+		}
 	}
 	return c, nil
 }
