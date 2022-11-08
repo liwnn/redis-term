@@ -40,12 +40,19 @@ func (a *App) init() {
 	tlog.SetLogger(a.main.GetOutput())
 
 	a.main.GetOpLine().SetEditClickFunc(func() {
-		setting := a.GetConfig()
-		a.main.ShowConnSetting(setting)
+		index := a.main.GetOpLine().GetSelect()
+		config := a.cfg.GetConfig(index)
+		setting := view.Setting{
+			Name: config.Name,
+			Host: config.Host,
+			Port: strconv.Itoa(config.Port),
+			Auth: config.Auth,
+		}
+		a.main.ShowConnSetting(setting, true)
 		tlog.Log("[App] init Edit Click: %v", setting)
 	})
 
-	a.main.GetConnSetting().SetOKHandler(func(s view.Setting) {
+	a.main.GetConnSetting().SetOKHandler(func(s view.Setting, edit bool) {
 		a.main.HideConnSetting()
 		if s.Name == "" {
 			return
@@ -57,10 +64,16 @@ func (a *App) init() {
 			Port: port,
 			Auth: s.Auth,
 		}
-		if a.cfg.Update(conf) {
-			a.main.GetOpLine().AddSelect(conf.Name)
-		} else {
+		fmt.Fprintln(a.main.GetOutput(), edit)
+		if edit {
+			lastIndex := a.main.GetOpLine().GetSelect()
+			a.cfg.Update(conf, a.main.GetOpLine().GetSelect())
 			a.main.RefreshOpLine(a.cfg.GetDbNames(), a.Show)
+			a.main.GetOpLine().Select(lastIndex)
+		} else {
+			a.cfg.Add(conf)
+			a.main.GetOpLine().AddSelect(conf.Name)
+			a.main.GetOpLine().Select(a.main.GetOpLine().GetOptionCount() - 1)
 		}
 		if err := a.cfg.Save(); err != nil {
 			panic(err)
@@ -133,16 +146,5 @@ func (a *App) onCmdLineEnter(text string) {
 				view.SetIndex(index)
 			}
 		}
-	}
-}
-
-func (a *App) GetConfig() view.Setting {
-	index := a.main.GetOpLine().GetSelect()
-	config := a.cfg.GetConfig(index)
-	return view.Setting{
-		Name: config.Name,
-		Host: config.Host,
-		Port: strconv.Itoa(config.Port),
-		Auth: config.Auth,
 	}
 }

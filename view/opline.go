@@ -64,6 +64,10 @@ func (o *OpLine) Select(index int) {
 	o.selectDrop.SetCurrentOption(index)
 }
 
+func (o *OpLine) GetOptionCount() int {
+	return o.selectDrop.GetOptionCount()
+}
+
 func (o *OpLine) GetSelect() int {
 	index, _ := o.selectDrop.GetCurrentOption()
 	return index

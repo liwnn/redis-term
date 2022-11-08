@@ -60,8 +60,9 @@ func (m *MainView) createModal() *tview.Modal {
 	return modal
 }
 
-func (m *MainView) ShowConnSetting(cfg Setting) {
+func (m *MainView) ShowConnSetting(cfg Setting, edit bool) {
 	m.pages.ShowPage("conn_setting")
+	m.connSetting.SetEdit(edit)
 	m.connSetting.Init(cfg)
 }
 

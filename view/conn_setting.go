@@ -19,8 +19,9 @@ type Setting struct {
 type ConnSetting struct {
 	tview.Primitive
 	form   *tview.Form
-	ok     func(Setting)
+	ok     func(Setting, bool)
 	cancel func()
+	edit   bool
 }
 
 func NewConnSetting() *ConnSetting {
@@ -42,33 +43,14 @@ func Center(width, height int, p tview.Primitive) *tview.Flex {
 		AddItem(nil, 0, 1, false)
 	return flex
 }
+
 func (s *ConnSetting) init() {
 	form := tview.NewForm().
 		AddInputField("Name:", "", 20, nil, nil).
 		AddInputField("Address:", "", 20, nil, nil).
 		AddPasswordField("Auth:", "", 20, '*', nil).
-		AddButton("  OK  ", func() {
-			if s.ok != nil {
-				name := s.form.GetFormItem(0).(*tview.InputField).GetText()
-				address := s.form.GetFormItem(1).(*tview.InputField).GetText()
-				auth := s.form.GetFormItem(2).(*tview.InputField).GetText()
-				t := strings.Split(address, ":")
-				if len(t) != 2 {
-					return
-				}
-				s.ok(Setting{
-					Name: name,
-					Host: t[0],
-					Port: t[1],
-					Auth: auth,
-				})
-			}
-		}).
-		AddButton("Cancel", func() {
-			if s.cancel != nil {
-				s.cancel()
-			}
-		})
+		AddButton("  OK  ", s.OnOk).
+		AddButton("Cancel", s.OnCancel)
 	form.SetButtonsAlign(tview.AlignCenter)
 	form.SetFieldTextColor(tcell.ColorBlack)
 	form.SetFieldBackgroundColor(tcell.ColorGray)
@@ -77,6 +59,40 @@ func (s *ConnSetting) init() {
 	p.SetMouseCapture(s.onMousecapture)
 	s.Primitive = p
 	s.form = form
+}
+
+func (s *ConnSetting) OnOk() {
+	if s.ok != nil {
+		name := s.form.GetFormItem(0).(*tview.InputField).GetText()
+		address := s.form.GetFormItem(1).(*tview.InputField).GetText()
+		auth := s.form.GetFormItem(2).(*tview.InputField).GetText()
+		t := strings.Split(address, ":")
+		if len(t) != 2 {
+			return
+		}
+		s.ok(Setting{
+			Name: name,
+			Host: t[0],
+			Port: t[1],
+			Auth: auth,
+		}, s.edit)
+	}
+	s.Clear()
+}
+
+func (s *ConnSetting) OnCancel() {
+	if s.cancel != nil {
+		s.cancel()
+	}
+	s.Clear()
+}
+
+func (s *ConnSetting) Clear() {
+	s.edit = false
+}
+
+func (s *ConnSetting) SetEdit(edit bool) {
+	s.edit = edit
 }
 
 func (s *ConnSetting) Init(c Setting) {
@@ -94,6 +110,7 @@ func (s *ConnSetting) SetCancelHandler(f func()) {
 	s.cancel = f
 	s.form.SetCancelFunc(f)
 }
-func (s *ConnSetting) SetOKHandler(f func(Setting)) {
+
+func (s *ConnSetting) SetOKHandler(f func(Setting, bool)) {
 	s.ok = f
 }

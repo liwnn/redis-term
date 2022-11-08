@@ -28,7 +28,7 @@ func NewConfig(filename string) (*Config, error) {
 			},
 		},
 	}
-	if _, err := os.Stat(c.filename); os.IsExist(err) {
+	if _, err := os.Stat(c.filename); err == nil || os.IsExist(err) {
 		if err := c.load(); err != nil {
 			return nil, err
 		}
@@ -71,13 +71,14 @@ func (c *Config) GetDbNames() []string {
 	return s
 }
 
-func (c *Config) Update(conf redisapi.RedisConfig) bool {
-	for i, v := range c.configs {
-		if v.Host == conf.Host && v.Port == conf.Port {
-			c.configs[i] = conf
-			return false
-		}
+func (c *Config) Update(conf redisapi.RedisConfig, index int) {
+	if index < 0 || index >= len(c.configs) {
+		c.Add(conf)
+		return
 	}
+	c.configs[index] = conf
+}
+
+func (c *Config) Add(conf redisapi.RedisConfig) {
 	c.configs = append(c.configs, conf)
-	return true
 }
