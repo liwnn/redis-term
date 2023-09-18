@@ -197,10 +197,7 @@ func (d *Data) GetValue(key string) interface{} {
 		if err != nil {
 			return nil
 		}
-		if IsText(b) {
-			return string(b)
-		}
-		return EncodeToHexString(b)
+		return b
 	case "hash":
 		return d.redis.GetKV(key)
 	case "set":

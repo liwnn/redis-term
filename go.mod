@@ -4,7 +4,7 @@ go 1.17
 
 require (
 	github.com/gdamore/tcell/v2 v2.6.0
-	github.com/rivo/tview v0.0.0-20230909130259-ba6a2a345459
+	github.com/rivo/tview v0.0.0-20230916092115-0ad06c2ea3dd
 )
 
 require (

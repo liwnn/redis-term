@@ -171,12 +171,19 @@ func (t *DBTree) updatePreview(o interface{}, valid bool) {
 	p := t.preview
 	p.Clear()
 	switch h := o.(type) {
-	case string:
-		text := o.(string)
+	case []byte:
+		b := o.([]byte)
+		var text string
+		if model.IsText(b) {
+			text = string(b)
+		} else {
+			text = model.EncodeToHexString(b)
+		}
 		p.ShowText(text, valid)
 		if valid {
-			p.SetSizeText(fmt.Sprintf("Size: %d bytes", len(text)))
+			p.SetSizeText(fmt.Sprintf("Size: %d bytes", len(b)))
 		}
+
 	case []string:
 		title := []view.TablePageTitle{
 			{
