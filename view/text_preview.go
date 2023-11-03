@@ -7,8 +7,9 @@ import (
 
 type TextPreview struct {
 	*tview.Flex
-	view     *tview.TextView
-	input    *tview.InputField
+	view *tview.TextArea
+
+	oldText  string
 	saveBtn  *tview.Button
 	saveGrid *tview.Grid
 
@@ -22,34 +23,25 @@ func NewTextPreview() *TextPreview {
 }
 
 func (p *TextPreview) init() {
-	view := tview.NewTextView()
-	view.SetDynamicColors(true).SetRegions(true)
-
-	input := tview.NewInputField()
-	input.SetPlaceholder("value")
-	input.SetFieldBackgroundColor(tcell.ColorDarkSlateGrey)
-	input.SetPlaceholderTextColor(tcell.ColorDimGrey)
+	view := tview.NewTextArea().SetWrap(true)
 
 	saveBtn := tview.NewButton("Save")
 	saveBtn.SetBackgroundColor(tcell.ColorDarkSlateGrey)
 	saveBtn.SetSelectedFunc(func() {
 		if p.onSave != nil {
-			oldValue := p.view.GetText(true)
-			newValue := p.input.GetText()
-			p.onSave(oldValue, newValue)
+			newValue := p.view.GetText()
+			p.onSave(p.oldText, newValue)
 		}
 	})
 
 	grid := tview.NewGrid().SetColumns(-1, 8).SetBorders(false).SetGap(0, 2).SetMinSize(5, 5)
-	//grid.AddItem(input, 0, 0, 1, 1, 0, 0, false)
-	//grid.AddItem(saveBtn, 0, 1, 1, 1, 0, 0, false)
+	grid.AddItem(saveBtn, 0, 1, 1, 1, 0, 0, false)
 
 	flex := tview.NewFlex().
 		SetDirection(tview.FlexRow).
 		AddItem(view, 0, 1, true).
 		AddItem(grid, 1, 1, false)
 
-	p.input = input
 	p.view = view
 	p.saveBtn = saveBtn
 	p.saveGrid = grid
@@ -57,17 +49,16 @@ func (p *TextPreview) init() {
 }
 
 func (p *TextPreview) SetText(text string) {
-	if len(text) > 4096 {
-		text = text[:4096] + "..."
-	}
-	p.view.SetText(text)
-	p.input.SetText(text)
+	p.oldText = text
+	// if len(text) > 4096 {
+	// 	text = text[:4096] + "..."
+	// }
+	p.view.SetText(text, true)
 }
 
 func (p *TextPreview) ShowSaveGrid(visible bool) {
 	p.saveGrid.Clear()
 	if visible {
-		p.saveGrid.AddItem(p.input, 0, 0, 1, 1, 0, 0, false)
 		p.saveGrid.AddItem(p.saveBtn, 0, 1, 1, 1, 0, 0, false)
 	}
 }
