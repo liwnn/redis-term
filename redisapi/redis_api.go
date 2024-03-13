@@ -119,7 +119,7 @@ func (r *Redis) Get(key string) string {
 		return ""
 	}
 
-	tlog.Log("[Redis] get %v", key)
+	tlog.Log("[Redis] GET %v", key)
 	return result.String()
 }
 
@@ -138,8 +138,8 @@ func (r *Redis) GetByte(key string) ([]byte, error) {
 	return result.Byte(), nil
 }
 
-// GetKV hash
-func (r *Redis) GetKV(key string) []KVText {
+// GetHash hash
+func (r *Redis) GetHash(key string) []KVText {
 	result, err := r.client.Do("HGETAll", key)
 	if err != nil {
 		return nil
@@ -153,7 +153,7 @@ func (r *Redis) GetKV(key string) []KVText {
 	for i := 0; i < len(elems)/2; i++ {
 		h = append(h, KVText{elems[i*2], elems[i*2+1]})
 	}
-	tlog.Log("[Redis] get %v", key)
+	tlog.Log("[Redis] HGETAll %v", key)
 	return h
 }
 
@@ -168,7 +168,7 @@ func (r *Redis) GetSet(key string) []string {
 	if err != nil {
 		return nil
 	}
-	tlog.Log("[Redis] get %v", key)
+	tlog.Log("[Redis] SMEMBERS %v", key)
 	return elems
 }
 
@@ -183,7 +183,7 @@ func (r *Redis) GetList(key string) []string {
 	if err != nil {
 		return nil
 	}
-	tlog.Log("[Redis] get %v", key)
+	tlog.Log("[Redis] lrange %v", key)
 	return elems
 }
 

@@ -57,13 +57,3 @@ func (t *Tree) SetSelectedFunc(handler func(node *tview.TreeNode)) {
 		t.lastNode = node
 	})
 }
-
-// SetNodeText change current node text
-func (t *Tree) SetNodeText(name string) {
-	node := t.GetCurrentNode()
-	if node.IsExpanded() {
-		node.SetText("▼ " + name)
-	} else {
-		node.SetText("▶ " + name)
-	}
-}

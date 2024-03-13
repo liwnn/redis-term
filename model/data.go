@@ -199,7 +199,7 @@ func (d *Data) GetValue(key string) interface{} {
 		}
 		return b
 	case "hash":
-		return d.redis.GetKV(key)
+		return d.redis.GetHash(key)
 	case "set":
 		return d.redis.GetSet(key)
 	case "list":

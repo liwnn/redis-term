@@ -11,6 +11,7 @@ type DataNode struct {
 	key     string
 	child   []*DataNode
 	p       *DataNode
+	keyNum  int
 	removed bool
 
 	childMap map[string]*DataNode
@@ -22,6 +23,10 @@ func (n *DataNode) Name() string {
 
 func (n *DataNode) Key() string {
 	return n.key
+}
+
+func (n *DataNode) KeyNum() int {
+	return n.keyNum
 }
 
 func (n *DataNode) IsRemoved() bool {
@@ -78,9 +83,10 @@ func (n *DataNode) RemoveChild(child *DataNode) *DataNode {
 // AddChild add child
 func (n *DataNode) AddChild(name, key string) *DataNode {
 	node := &DataNode{
-		name: name,
-		key:  key,
-		p:    n,
+		name:   name,
+		key:    key,
+		p:      n,
+		keyNum: 1,
 	}
 	n.child = append(n.child, node)
 	if len(n.child) > 20 {
@@ -139,6 +145,8 @@ func (t *DataTree) AddKey(key string) {
 		node := p.GetChildByKey(prefix)
 		if node == nil {
 			node = p.AddChild(name, prefix)
+		} else {
+			node.keyNum++
 		}
 		lastColon = i
 		p = node

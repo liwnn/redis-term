@@ -69,7 +69,12 @@ func (t *DBTree) OnSelected(node *tview.TreeNode) {
 	}
 	tlog.Log("OnSelected: name[%v] index[%v]", typ.Name, typ.Index)
 	if typ.Data != nil && typ.Data.HasChild() {
-		t.tree.SetNodeText(typ.Data.Name())
+		node := t.tree.GetCurrentNode()
+		if node.IsExpanded() {
+			node.SetText(fmt.Sprintf("▼ %v (%v)", typ.Data.Name(), typ.Data.KeyNum()))
+		} else {
+			node.SetText(fmt.Sprintf("▶ %v (%v)", typ.Data.Name(), typ.Data.KeyNum()))
+		}
 	}
 	childen := node.GetChildren()
 	if len(childen) == 0 {
@@ -118,13 +123,7 @@ func (t *DBTree) addNode(node *tview.TreeNode, dataNodes []*model.DataNode) {
 			Index: typ.Index,
 			Data:  dataNode,
 		}
-		if dataNode.HasChild() {
-			r.Name = "dir"
-			t.tree.AddNode("▶ "+dataNode.Name(), r)
-		} else {
-			r.Name = "key"
-			t.tree.AddNode(dataNode.Name(), r)
-		}
+		t.addReference(dataNode, r)
 	}
 }
 
@@ -261,17 +260,21 @@ func (t *DBTree) reloadSelectKey() {
 			Index: reference.Index,
 			Data:  dataNode,
 		}
-		if dataNode.HasChild() {
-			r.Name = "dir"
-			t.tree.AddNode("▶ "+dataNode.Name(), r)
-		} else {
-			r.Name = "key"
-			t.tree.AddNode(dataNode.Name(), r)
-		}
+		t.addReference(dataNode, r)
 	}
 
 	if reference.Data.IsRemoved() {
 		t.tree.SetNodeRemoved()
+	}
+}
+
+func (t *DBTree) addReference(dataNode *model.DataNode, r *Reference) {
+	if dataNode.HasChild() {
+		r.Name = "dir"
+		t.tree.AddNode(fmt.Sprintf("▶ %v (%v)", dataNode.Name(), dataNode.KeyNum()), r)
+	} else {
+		r.Name = "key"
+		t.tree.AddNode(dataNode.Name(), r)
 	}
 }
 
