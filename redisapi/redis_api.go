@@ -23,6 +23,8 @@ type KVText struct {
 	Value string
 }
 
+type ZSetText KVText
+
 // Redis client
 type Redis struct {
 	client *redis.Client
@@ -245,4 +247,23 @@ func (r *Redis) FlushDB() error {
 
 	tlog.Log("[Redis] FLUSHDB  %v", result)
 	return nil
+}
+
+func (r *Redis) ZRange(key string, start, stop int) []ZSetText {
+	result, err := r.client.Do("ZRANGE", key, strconv.Itoa(start), strconv.Itoa(stop), "WITHSCORES")
+	if err != nil {
+		tlog.Log("[Redis] ZRange %v", key)
+		return nil
+	}
+	elems, err := result.List()
+	if err != nil {
+		tlog.Log("[Redis] ZRange %v", key)
+		return nil
+	}
+	h := make([]ZSetText, 0, len(elems)/2)
+	for i := 0; i < len(elems)/2; i++ {
+		h = append(h, ZSetText{elems[i*2], elems[i*2+1]})
+	}
+	tlog.Log("[Redis] ZRANGE %v %v %v", key, start, stop)
+	return h
 }

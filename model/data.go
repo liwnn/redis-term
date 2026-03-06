@@ -206,6 +206,8 @@ func (d *Data) GetValue(key string) interface{} {
 		return d.redis.GetList(key)
 	case "none":
 		return nil
+	case "zset":
+		return d.redis.ZRange(key, 0, -1)
 	default:
 		return fmt.Sprintf("%v not implement!!!", val)
 	}

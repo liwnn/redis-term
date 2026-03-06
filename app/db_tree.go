@@ -220,6 +220,26 @@ func (t *DBTree) updatePreview(o interface{}, valid bool) {
 			rows = append(rows, view.Row{v.Key, v.Value})
 		}
 		p.ShowTable(title, rows)
+	case []redisapi.ZSetText:
+		title := []view.TablePageTitle{
+			{
+				Name:      "row",
+				Expansion: 1,
+			},
+			{
+				Name:      "member",
+				Expansion: 3,
+			},
+			{
+				Name:      "score",
+				Expansion: 24,
+			},
+		}
+		rows := make([]view.Row, 0, len(h))
+		for _, v := range h {
+			rows = append(rows, view.Row{v.Key, v.Value})
+		}
+		p.ShowTable(title, rows)
 	}
 }
 
