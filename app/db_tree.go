@@ -147,10 +147,11 @@ func (t *DBTree) OnChanged(node *tview.TreeNode) {
 			t.changeDB(typ.Index)
 			begin := time.Now()
 			o := t.data.GetValue(typ.Data.Key())
+			keyType := t.data.Type(typ.Data.Key())
 			tlog.Log("redis value time cost %v", time.Since(begin))
-			t.updatePreview(o, true)
+			t.updatePreviewWithType(o, keyType, true)
 		} else {
-			t.updatePreview(fmt.Sprintf("%v was removed", typ.Data.Key()), false)
+			t.updatePreviewWithType(fmt.Sprintf("%v was removed", typ.Data.Key()), "", false)
 		}
 		t.preview.SetDeleteText("Delete")
 		t.preview.SetKey(typ.Data.Key())
@@ -161,14 +162,15 @@ func (t *DBTree) OnChanged(node *tview.TreeNode) {
 
 			t.preview.SetDeleteText("Delete")
 		}
-		t.updatePreview("", false)
+		t.updatePreviewWithType("", "", false)
 		t.preview.SetKey("")
 	}
 }
 
-func (t *DBTree) updatePreview(o interface{}, valid bool) {
+func (t *DBTree) updatePreviewWithType(o interface{}, keyType string, valid bool) {
 	p := t.preview
 	p.Clear()
+	p.SetKeyType(keyType)
 	switch h := o.(type) {
 	case []byte:
 		b := o.([]byte)
@@ -259,10 +261,11 @@ func (t *DBTree) reloadSelectKey() {
 		if o == nil {
 			reference.Data.SetRemoved()
 			t.tree.SetNodeRemoved()
-			t.updatePreview(fmt.Sprintf("%v was removed", key), false)
+			t.updatePreviewWithType(fmt.Sprintf("%v was removed", key), "", false)
 			t.preview.SetDeleteText("Delete")
 		} else {
-			t.updatePreview(o, true)
+			kt := t.data.Type(key)
+			t.updatePreviewWithType(o, kt, true)
 		}
 		return
 	}
@@ -388,7 +391,7 @@ func (t *DBTree) deleteSelectKey(typ *Reference) {
 			return
 		}
 		t.tree.SetNodeRemoved()
-		t.updatePreview(fmt.Sprintf("%v was removed", typ.Data.Key()), false)
+		t.updatePreviewWithType(fmt.Sprintf("%v was removed", typ.Data.Key()), "", false)
 	case "index":
 		if err := t.data.FlushDB(typ.Data); err != nil {
 			tlog.Log("DBTree deleteSelectKey %v", err)
@@ -403,7 +406,7 @@ func (t *DBTree) deleteSelectKey(typ *Reference) {
 			return
 		}
 		t.tree.SetNodeRemoved()
-		t.updatePreview("", false)
+		t.updatePreviewWithType("", "", false)
 	default:
 		tlog.Log("delete %v not implement", typ.Name)
 	}

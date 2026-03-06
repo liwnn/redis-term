@@ -13,6 +13,8 @@ type Preview struct {
 
 	showFlex  *tview.Flex
 	sizeText  *tview.TextView
+	typeText  *tview.TextView
+	keyType   string
 	delBtn    *tview.Button
 	reloadBtn *tview.Button
 	renameBtn *tview.Button
@@ -25,7 +27,16 @@ type Preview struct {
 
 // NewPreview new
 func NewPreview() *Preview {
+	typeText := tview.NewTextView()
+	typeText.
+		SetTextColor(tcell.ColorBlack).
+		SetBackgroundColor(tcell.ColorDefault)
+
 	sizeText := tview.NewTextView()
+	sizeText.
+		SetTextColor(tcell.ColorBlack).
+		SetBackgroundColor(tcell.ColorDefault)
+
 	keyInput := tview.NewInputField()
 	keyInput.SetLabel("Key:").
 		SetLabelWidth(4).
@@ -39,11 +50,10 @@ func NewPreview() *Preview {
 	renameBtn.SetBackgroundColor(tcell.ColorDarkSlateGrey)
 	grid := tview.NewGrid().
 		SetRows(-1).
-		SetColumns(20, 10, 10, 30, 10, -1).
+		SetColumns(16, 16, 10, 10, 30, 10, -1).
 		SetBorders(false).
 		SetGap(0, 2).
 		SetMinSize(5, 5)
-	grid.AddItem(sizeText, 0, 0, 1, 1, 0, 0, false)
 
 	showFlex := tview.NewFlex()
 	showFlex.
@@ -60,6 +70,7 @@ func NewPreview() *Preview {
 		flexBox:   previewFlexBox,
 		showFlex:  showFlex,
 		sizeText:  sizeText,
+		typeText:  typeText,
 		delBtn:    delBtn,
 		reloadBtn: reloadBtn,
 		renameBtn: renameBtn,
@@ -94,19 +105,49 @@ func (p *Preview) init() {
 
 // Clear all
 func (p *Preview) Clear() {
+	p.keyType = ""
 	p.SetSizeText("")
+	p.SetTypeText("")
 }
 
 // SetSizeText show text size
 func (p *Preview) SetSizeText(text string) {
+	if len(text) == 0 {
+		p.grid.RemoveItem(p.sizeText)
+		p.sizeText.SetBackgroundColor(tcell.ColorDefault)
+	} else {
+		p.grid.AddItem(p.sizeText, 0, 1, 1, 1, 0, 0, false)
+		p.sizeText.SetBackgroundColor(tcell.NewRGBColor(240, 180, 240))
+	}
 	p.sizeText.SetText(text)
+}
+
+// SetKeyType set current redis key type text prefix
+func (p *Preview) SetKeyType(t string) {
+	p.keyType = t
+	p.SetTypeText("")
+	if len(t) > 0 {
+		p.SetTypeText(fmt.Sprintf("Type: %s", t))
+	}
+}
+
+// SetTypeText set type label text
+func (p *Preview) SetTypeText(text string) {
+	if len(text) == 0 {
+		p.grid.RemoveItem(p.typeText)
+		p.typeText.SetBackgroundColor(tcell.ColorDefault)
+	} else {
+		p.grid.AddItem(p.typeText, 0, 0, 1, 1, 0, 0, false)
+		p.typeText.SetBackgroundColor(tcell.NewRGBColor(180, 230, 250))
+	}
+	p.typeText.SetText(text)
 }
 
 // SetOpBtnVisible show reload delete button
 func (p *Preview) SetOpBtnVisible(visible bool) {
 	if visible {
-		p.grid.AddItem(p.reloadBtn, 0, 1, 1, 1, 0, 0, false)
-		p.grid.AddItem(p.delBtn, 0, 2, 1, 1, 0, 0, false)
+		p.grid.AddItem(p.reloadBtn, 0, 2, 1, 1, 0, 0, false)
+		p.grid.AddItem(p.delBtn, 0, 3, 1, 1, 0, 0, false)
 	} else {
 		p.grid.RemoveItem(p.reloadBtn)
 		p.grid.RemoveItem(p.delBtn)
@@ -130,8 +171,8 @@ func (p *Preview) SetSaveFunc(f func(oldValue, newValue string)) {
 // SetKey set key input text
 func (p *Preview) SetKey(text string) {
 	if len(text) > 0 {
-		p.grid.AddItem(p.keyInput, 0, 3, 1, 1, 0, 0, false)
-		p.grid.AddItem(p.renameBtn, 0, 4, 1, 1, 0, 0, false)
+		p.grid.AddItem(p.keyInput, 0, 4, 1, 1, 0, 0, false)
+		p.grid.AddItem(p.renameBtn, 0, 5, 1, 1, 0, 0, false)
 		p.keyInput.SetText(text)
 	} else {
 		p.grid.RemoveItem(p.keyInput)

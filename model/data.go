@@ -167,6 +167,14 @@ func (d *Data) Index() int {
 	return d.index
 }
 
+// Type returns redis key type string for the given key.
+func (d *Data) Type(key string) string {
+	if d.redis == nil {
+		return ""
+	}
+	return d.redis.Type(key)
+}
+
 // Rename key -> newKey
 func (d *Data) Rename(node *DataNode, newKey string) {
 	if d.redis == nil {
