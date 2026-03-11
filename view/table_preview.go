@@ -47,16 +47,18 @@ func (p *TablePreview) init() {
 		SetSeparator(' ').
 		SetFixed(1, 1).
 		SetSelectedStyle(style.Foreground(tcell.ColorWhite).
-			Background(tcell.ColorDarkSlateGrey).
+			Background(ThemeControlBG).
 			Attributes(tcell.AttrBold)).
 		SetEvaluateAllRows(true)
 	table.SetBorder(true)
 
 	// button
 	prevBtn := tview.NewButton("◀")
-	prevBtn.SetBackgroundColor(tcell.ColorDarkSlateGrey)
+	prevBtn.SetBackgroundColor(ThemeBtnRenameBG)
+	prevBtn.SetLabelColor(ThemeBtnRenameFG)
 	nextBtn := tview.NewButton("▶")
-	nextBtn.SetBackgroundColor(tcell.ColorDarkSlateGrey)
+	nextBtn.SetBackgroundColor(ThemeBtnRenameBG)
+	nextBtn.SetLabelColor(ThemeBtnRenameFG)
 	opGrid := tview.NewGrid().SetRows(1).SetColumns(5, 5, -1).
 		SetBorders(false).SetGap(0, 2)
 	opGrid.AddItem(prevBtn, 0, 0, 1, 1, 0, 0, false)

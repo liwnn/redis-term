@@ -52,8 +52,8 @@ func (s *ConnSetting) init() {
 		AddButton("  OK  ", s.OnOk).
 		AddButton("Cancel", s.OnCancel)
 	form.SetButtonsAlign(tview.AlignCenter)
-	form.SetFieldTextColor(tcell.ColorBlack)
-	form.SetFieldBackgroundColor(tcell.ColorGray)
+	form.SetFieldTextColor(ThemeControlFG)
+	form.SetFieldBackgroundColor(ThemeControlBG)
 	form.SetBorder(true).SetTitle("Connection setting")
 	p := Center(36, 15, form)
 	p.SetMouseCapture(s.onMousecapture)

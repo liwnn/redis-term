@@ -22,9 +22,17 @@ func NewOpLine() *OpLine {
 
 func (o *OpLine) init() {
 	drop := tview.NewDropDown().SetLabel("Select server:")
+	drop.SetLabelColor(ThemeControlFG)
+	drop.SetFieldTextColor(ThemeControlFG)
+	drop.SetFieldBackgroundColor(ThemeControlBG)
+	// 调整下拉列表样式以避免高亮浅色
+	normal := tcell.StyleDefault.Foreground(ThemeControlFG).Background(ThemeControlBG)
+	selected := tcell.StyleDefault.Foreground(ThemeControlFG).Background(ThemeBtnRenameBG)
+	drop.SetListStyles(normal, selected)
 
 	saveBtn := tview.NewButton(" + ")
-	saveBtn.SetBackgroundColor(tcell.ColorDarkSlateGrey)
+	saveBtn.SetBackgroundColor(ThemeBtnRenameBG)
+	saveBtn.SetLabelColor(ThemeBtnRenameFG)
 	saveBtn.SetSelectedFunc(func() {
 		if o.saveHandler != nil {
 			o.saveHandler()
@@ -32,7 +40,8 @@ func (o *OpLine) init() {
 	})
 
 	editBtn := tview.NewButton(" e ")
-	editBtn.SetBackgroundColor(tcell.ColorDarkSlateGrey)
+	editBtn.SetBackgroundColor(ThemeBtnRenameBG)
+	editBtn.SetLabelColor(ThemeBtnRenameFG)
 	editBtn.SetSelectedFunc(func() {
 		if o.editHandler != nil {
 			o.editHandler()

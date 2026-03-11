@@ -29,25 +29,28 @@ type Preview struct {
 func NewPreview() *Preview {
 	typeText := tview.NewTextView()
 	typeText.
-		SetTextColor(tcell.ColorBlack).
+		SetTextColor(ThemeLabelFG).
 		SetBackgroundColor(tcell.ColorDefault)
 
 	sizeText := tview.NewTextView()
 	sizeText.
-		SetTextColor(tcell.ColorBlack).
+		SetTextColor(ThemeLabelFG).
 		SetBackgroundColor(tcell.ColorDefault)
 
 	keyInput := tview.NewInputField()
 	keyInput.SetLabel("Key:").
 		SetLabelWidth(4).
 		SetLabelColor(tcell.ColorWhite).
-		SetFieldBackgroundColor(tcell.ColorDarkSlateGrey)
+		SetFieldBackgroundColor(ThemeControlBG)
 	delBtn := tview.NewButton("Delete")
-	delBtn.SetBackgroundColor(tcell.ColorDarkSlateGrey)
+	delBtn.SetBackgroundColor(ThemeBtnRenameBG)
+	delBtn.SetLabelColor(ThemeBtnRenameFG)
 	reloadBtn := tview.NewButton("Reload")
-	reloadBtn.SetBackgroundColor(tcell.ColorDarkSlateGrey)
+	reloadBtn.SetBackgroundColor(ThemeBtnRenameBG)
+	reloadBtn.SetLabelColor(ThemeBtnRenameFG)
 	renameBtn := tview.NewButton("Rename")
-	renameBtn.SetBackgroundColor(tcell.ColorDarkSlateGrey)
+	renameBtn.SetBackgroundColor(ThemeBtnRenameBG)
+	renameBtn.SetLabelColor(ThemeBtnRenameFG)
 	grid := tview.NewGrid().
 		SetRows(-1).
 		SetColumns(16, 16, 10, 10, 30, 10, -1).
@@ -59,7 +62,7 @@ func NewPreview() *Preview {
 	showFlex.
 		SetTitle("PREVIEW").
 		SetBorder(true).
-		SetBorderColor(tcell.ColorSteelBlue)
+		SetBorderColor(ThemeBorder)
 
 	previewFlexBox := tview.NewFlex()
 	previewFlexBox.SetDirection(tview.FlexRow)
@@ -117,7 +120,7 @@ func (p *Preview) SetSizeText(text string) {
 		p.sizeText.SetBackgroundColor(tcell.ColorDefault)
 	} else {
 		p.grid.AddItem(p.sizeText, 0, 1, 1, 1, 0, 0, false)
-		p.sizeText.SetBackgroundColor(tcell.NewRGBColor(240, 180, 240))
+		p.sizeText.SetBackgroundColor(ThemeSizeBG)
 	}
 	p.sizeText.SetText(text)
 }
@@ -138,7 +141,7 @@ func (p *Preview) SetTypeText(text string) {
 		p.typeText.SetBackgroundColor(tcell.ColorDefault)
 	} else {
 		p.grid.AddItem(p.typeText, 0, 0, 1, 1, 0, 0, false)
-		p.typeText.SetBackgroundColor(tcell.NewRGBColor(180, 230, 250))
+		p.typeText.SetBackgroundColor(ThemeTypeBG)
 	}
 	p.typeText.SetText(text)
 }

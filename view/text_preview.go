@@ -1,7 +1,6 @@
 package view
 
 import (
-	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
 
@@ -26,7 +25,8 @@ func (p *TextPreview) init() {
 	view := tview.NewTextArea().SetWrap(true)
 
 	saveBtn := tview.NewButton("Save")
-	saveBtn.SetBackgroundColor(tcell.ColorDarkSlateGrey)
+	saveBtn.SetBackgroundColor(ThemeBtnRenameBG)
+	saveBtn.SetLabelColor(ThemeBtnRenameFG)
 	saveBtn.SetSelectedFunc(func() {
 		if p.onSave != nil {
 			newValue := p.view.GetText()

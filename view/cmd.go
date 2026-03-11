@@ -39,8 +39,8 @@ func (c *CmdConsole) init() {
 
 	cmdLine := tview.NewInputField()
 	cmdLine.SetPlaceholder("input command")
-	cmdLine.SetPlaceholderStyle(tcell.StyleDefault.Foreground(tcell.Color245).Background(tcell.Color238))
-	cmdLine.SetFieldStyle(tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.Color238))
+	cmdLine.SetPlaceholderStyle(tcell.StyleDefault.Foreground(ThemeControlFG).Background(ThemeControlBG))
+	cmdLine.SetFieldStyle(tcell.StyleDefault.Foreground(ThemeControlFG).Background(ThemeControlBG))
 	cmdLine.SetInputCapture(c.OnEnter)
 
 	flex := tview.NewFlex().
