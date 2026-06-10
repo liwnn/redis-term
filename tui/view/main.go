@@ -24,8 +24,7 @@ type MainView struct {
 	connSetting *ConnSetting
 	search      *tview.InputField
 
-	opBar     *tview.Flex     // full-width top bar: dropdown + buttons + preview op row
-	opBarHost *tview.Flex     // slot inside opBar that holds the active preview's op row
+	opBarHost *tview.Flex     // slot inside the op bar that holds the active preview's op row
 	opBarItem tview.Primitive // the op row currently mounted in opBarHost (for removal)
 
 	bottomTabs  *tview.TextView // the CONSOLE / redis-cli tab strip
@@ -206,12 +205,29 @@ const opBarDropWidth = 36
 // gap, so the preview op row in the right segment never overlaps the buttons.
 const opBarLeftWidth = opBarDropWidth + 2 + 3 + 1 + 3 + 1 + 3 + 3 // drop + gaps + 3 buttons + trailing gap
 
-// buildOpBar builds the full-width connection op bar as two segments: a
-// fixed-width left segment (dropdown + add/edit/delete buttons) and a flexible
-// right segment that hosts the active preview's op row (type/size chips,
-// reload/delete/key/rename). The fixed left width guarantees the op row never
-// overlaps the buttons regardless of window size.
-func (m *MainView) buildOpBar() *tview.Flex {
+// opBar is the connection op bar. Its left segment width tracks the tree panel
+// (window/5, matching the body's 1:4 split) so the preview op row in the right
+// segment starts at the preview's left edge — but never shrinks below the width
+// the dropdown+buttons need, so on a narrow window they can't be overlapped.
+type opBar struct {
+	*tview.Flex
+	left *tview.Flex
+}
+
+func (b *opBar) Draw(screen tcell.Screen) {
+	_, _, width, _ := b.GetRect()
+	// align with body's tree panel (proportion 1 of 1:4), but never below the
+	// width the dropdown+buttons need.
+	leftW := max(width/5, opBarLeftWidth)
+	b.Flex.ResizeItem(b.left, leftW, 0)
+	b.Flex.Draw(screen)
+}
+
+// buildOpBar builds the full-width connection op bar as two segments: a left
+// segment (dropdown + add/edit/delete buttons) whose width follows the tree panel
+// (clamped to a minimum), and a flexible right segment hosting the active
+// preview's op row (type/size chips, reload/delete/key/rename).
+func (m *MainView) buildOpBar() tview.Primitive {
 	left := tview.NewFlex().SetDirection(tview.FlexColumn)
 	left.SetBackgroundColor(ThemePanelBG)
 	left.AddItem(m.opLine.selectDrop, opBarDropWidth, 0, false)
@@ -221,18 +237,17 @@ func (m *MainView) buildOpBar() *tview.Flex {
 	left.AddItem(m.opLine.editBtn, 3, 0, false)
 	left.AddItem(nil, 1, 0, false)
 	left.AddItem(m.opLine.delBtn, 3, 0, false)
-	left.AddItem(nil, 0, 1, false) // absorb the trailing gap within the fixed width
+	left.AddItem(nil, 0, 1, false) // absorb the trailing gap within the segment
 
 	host := tview.NewFlex().SetDirection(tview.FlexColumn)
 	host.SetBackgroundColor(ThemePanelBG)
 
-	opBar := tview.NewFlex().SetDirection(tview.FlexColumn)
-	opBar.SetBackgroundColor(ThemePanelBG)
-	opBar.AddItem(left, opBarLeftWidth, 0, false) // fixed: dropdown + buttons
-	opBar.AddItem(host, 0, 1, false)              // flexible: the preview op row
-	m.opBar = opBar
+	flex := tview.NewFlex().SetDirection(tview.FlexColumn)
+	flex.SetBackgroundColor(ThemePanelBG)
+	flex.AddItem(left, opBarLeftWidth, 0, false) // width is re-set each Draw
+	flex.AddItem(host, 0, 1, false)              // flexible: the preview op row
 	m.opBarHost = host
-	return opBar
+	return &opBar{Flex: flex, left: left}
 }
 
 // SetPreviewOpBar mounts a preview's op row into the top bar's host slot,
