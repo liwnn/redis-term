@@ -27,6 +27,9 @@ type MainView struct {
 	opBar     *tview.Flex     // full-width top bar: dropdown + buttons + preview op row
 	opBarHost *tview.Flex     // slot inside opBar that holds the active preview's op row
 	opBarItem tview.Primitive // the op row currently mounted in opBarHost (for removal)
+
+	bottomTabs  *tview.TextView // the CONSOLE / redis-cli tab strip
+	bottomPages *tview.Pages    // the panel pages switched by the tab strip
 }
 
 // NewMainView new
@@ -198,24 +201,35 @@ func (m *MainView) GetConnSetting() *ConnSetting {
 // right of the window).
 const opBarDropWidth = 36
 
-// buildOpBar builds the full-width connection op bar: a fixed-width dropdown (wide
-// enough that long names aren't clipped), the add/edit/delete buttons, then a
-// flexible host slot that carries the active preview's op row (type/size chips,
-// reload/delete/key/rename) — moved here from above the value area.
+// opBarLeftWidth is the fixed width of the op bar's left segment (dropdown +
+// add/edit/delete buttons). It must be wide enough to hold all of them, plus a
+// gap, so the preview op row in the right segment never overlaps the buttons.
+const opBarLeftWidth = opBarDropWidth + 2 + 3 + 1 + 3 + 1 + 3 + 3 // drop + gaps + 3 buttons + trailing gap
+
+// buildOpBar builds the full-width connection op bar as two segments: a
+// fixed-width left segment (dropdown + add/edit/delete buttons) and a flexible
+// right segment that hosts the active preview's op row (type/size chips,
+// reload/delete/key/rename). The fixed left width guarantees the op row never
+// overlaps the buttons regardless of window size.
 func (m *MainView) buildOpBar() *tview.Flex {
-	opBar := tview.NewFlex().SetDirection(tview.FlexColumn)
-	opBar.SetBackgroundColor(ThemePanelBG)
-	opBar.AddItem(m.opLine.selectDrop, opBarDropWidth, 0, false)
-	opBar.AddItem(nil, 2, 0, false)
-	opBar.AddItem(m.opLine.saveBtn, 3, 0, false)
-	opBar.AddItem(nil, 1, 0, false)
-	opBar.AddItem(m.opLine.editBtn, 3, 0, false)
-	opBar.AddItem(nil, 1, 0, false)
-	opBar.AddItem(m.opLine.delBtn, 3, 0, false)
-	opBar.AddItem(nil, 4, 0, false) // gap before the preview op row (Type chip etc.)
+	left := tview.NewFlex().SetDirection(tview.FlexColumn)
+	left.SetBackgroundColor(ThemePanelBG)
+	left.AddItem(m.opLine.selectDrop, opBarDropWidth, 0, false)
+	left.AddItem(nil, 2, 0, false)
+	left.AddItem(m.opLine.saveBtn, 3, 0, false)
+	left.AddItem(nil, 1, 0, false)
+	left.AddItem(m.opLine.editBtn, 3, 0, false)
+	left.AddItem(nil, 1, 0, false)
+	left.AddItem(m.opLine.delBtn, 3, 0, false)
+	left.AddItem(nil, 0, 1, false) // absorb the trailing gap within the fixed width
+
 	host := tview.NewFlex().SetDirection(tview.FlexColumn)
 	host.SetBackgroundColor(ThemePanelBG)
-	opBar.AddItem(host, 0, 1, false) // flexible: holds the preview op row
+
+	opBar := tview.NewFlex().SetDirection(tview.FlexColumn)
+	opBar.SetBackgroundColor(ThemePanelBG)
+	opBar.AddItem(left, opBarLeftWidth, 0, false) // fixed: dropdown + buttons
+	opBar.AddItem(host, 0, 1, false)              // flexible: the preview op row
 	m.opBar = opBar
 	m.opBarHost = host
 	return opBar
@@ -290,20 +304,18 @@ func (m *MainView) createBottom() tview.Primitive {
 			SetBorder(true)
 		console.SetBackgroundColor(ThemePanelBG)
 		m.console = console
-		pages.GetPageCount()
 		pages.AddPage(title, console, true, true)
-		fmt.Fprintf(info, `["%v"][#9aa6c2]%s[white][""] `, title, title)
 	}
 
 	{
 		cmd := NewCmdConsole("redis-cli")
 		m.cmdConsole = cmd
-
 		pages.AddPage(cmd.Title(), cmd, true, false)
-		fmt.Fprintf(info, `["%v"][#9aa6c2]%s[white][""] `, cmd.Title(), cmd.Title())
 	}
 
-	info.Highlight("CONSOLE")
+	m.bottomTabs = info
+	m.bottomPages = pages
+	m.renderBottomTabs(true) // default to redis (cli tab shown) until a connection is shown
 
 	layout := tview.NewFlex().
 		SetDirection(tview.FlexRow).
@@ -311,4 +323,26 @@ func (m *MainView) createBottom() tview.Primitive {
 		AddItem(info, 1, 1, false)
 	layout.SetBackgroundColor(ThemePanelBG)
 	return layout
+}
+
+// renderBottomTabs rebuilds the bottom tab strip. The redis-cli tab is only
+// shown for redis connections (it issues raw redis commands); for other backends
+// it's hidden and the panel falls back to CONSOLE. Call on every connection show.
+func (m *MainView) renderBottomTabs(isRedis bool) {
+	if m.bottomTabs == nil {
+		return
+	}
+	m.bottomTabs.Clear()
+	fmt.Fprintf(m.bottomTabs, `["CONSOLE"][#9aa6c2]CONSOLE[white][""] `)
+	if isRedis {
+		fmt.Fprintf(m.bottomTabs, `["redis-cli"][#9aa6c2]redis-cli[white][""] `)
+	} else if name, _ := m.bottomPages.GetFrontPage(); name == "redis-cli" {
+		m.bottomPages.SwitchToPage("CONSOLE") // active tab vanished; fall back
+	}
+	m.bottomTabs.Highlight("CONSOLE")
+}
+
+// SetCliVisible shows or hides the redis-cli tab based on the active backend.
+func (m *MainView) SetCliVisible(isRedis bool) {
+	m.renderBottomTabs(isRedis)
 }

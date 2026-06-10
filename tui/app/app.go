@@ -278,6 +278,7 @@ func (a *App) Show(index int) {
 	a.main.GetSearch().SetText("") // clear the filter when switching connections
 	a.main.SetPreview(a.tree.PreviewFlex())
 	a.main.SetPreviewOpBar(a.tree.Preview().OpBar()) // host this tree's op row in the top bar
+	a.main.SetCliVisible(conf.Kind == "" || conf.Kind == "redis") // redis-cli only for redis
 	a.main.GetCmd().SetPromt(conf.Name, a.tree.Index())
 	a.cfg.SaveLastSelected(index)
 	a.main.SetFocus(a.tree.TreeView())
