@@ -1,0 +1,67 @@
+package view
+
+import "github.com/gdamore/tcell/v2"
+
+// 统一浅色主题，尽量在不同终端保持一致
+var (
+	// ThemePanelBG is the global panel background. tview otherwise leaves boxes
+	// at ColorDefault, so the terminal's muddy mid-gray (~#626262) shows
+	// through; painting every panel this near-black keeps the UI crisp.
+	ThemePanelBG = tcell.GetColor("#191a1b")
+
+	ThemeControlBG = tcell.GetColor("darkslategray")
+	ThemeControlFG = tcell.ColorWhite
+
+	// ThemeRule is a dim line color for the thin rules framing the search box —
+	// darker than ThemeBorderDim so it recedes quietly against the panel bg.
+	ThemeRule = tcell.GetColor("#3e4348")
+
+	ThemeBorder = tcell.GetColor("steelblue")
+	// ThemeBorderDim is a muted border that recedes against the dark panel bg,
+	// avoiding the loud doubled-blue look of full steelblue everywhere — but it
+	// still needs enough contrast to read clearly as a frame.
+	ThemeBorderDim = tcell.GetColor("#c8ccd0")
+	ThemeTitleFG   = tcell.GetColor("#c8ccd0")
+
+	// Type/Size are rendered as muted "chips": a single slightly-lifted dark fill
+	// shared by both, distinguished only by a calm colored foreground. This keeps
+	// the preview toolbar consistent with the dark theme instead of the loud
+	// lightcyan/lightpink blocks it used before.
+	ThemeChipBG = tcell.GetColor("#252627")
+	ThemeTypeFG = tcell.GetColor("#6fb3c9")
+	ThemeSizeFG = tcell.GetColor("#c98fb0")
+
+	// Query input: a slightly lifted dark fill (just above the panel bg) so the
+	// field reads as a distinct box, with a dim placeholder when empty.
+	ThemeQueryBG          = tcell.GetColor("#252627")
+	ThemeQueryFG          = tcell.ColorWhite
+	ThemeQueryPlaceholder = tcell.GetColor("#6b6b6b")
+	ThemeQueryLabel       = tcell.GetColor("lightsteelblue")
+
+	// ThemeInputBG is a noticeably lifted fill for single-line input fields (the
+	// Key box) so their boundary is clearly visible against the panel bg —
+	// #252627 sits too close to #191a1b to read as a distinct box.
+	ThemeInputBG = tcell.GetColor("#3a4048")
+
+	// ThemeSelectBG highlights the active selection (selected table cell,
+	// dropdown item, tree node) with a calm blue.
+	ThemeSelectBG = tcell.GetColor("#2f5d8a")
+
+	// ThemeRowHighlightBG tints the whole row containing the selected cell. It
+	// sits between the panel bg and ThemeSelectBG so the active row reads as a
+	// band while the selected cell still stands out on top.
+	ThemeRowHighlightBG = tcell.GetColor("#22303d")
+
+	// Toolbar buttons (the +/e icons by the connection selector): a flat,
+	// slightly lifted fill that sits cleanly on the dark panel instead of the
+	// muddy remapped green. Explicit RGB avoids terminal palette remapping.
+	ThemeBtnToolBG      = tcell.GetColor("#454e5a")
+	ThemeBtnToolFG      = tcell.GetColor("#dce3ea")
+	ThemeBtnToolHoverBG = tcell.GetColor("#5a6675")
+
+	// Destructive buttons (Drop/Delete): a muted red that stays readable on the
+	// dark panel, brightening on focus. Explicit RGB avoids palette remapping.
+	ThemeBtnDangerBG      = tcell.GetColor("#5c2a2a")
+	ThemeBtnDangerFG      = tcell.GetColor("#f5c2c2")
+	ThemeBtnDangerHoverBG = tcell.GetColor("#8b3a3a")
+)

@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>redis-term</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, Menlo, monospace; font-size: 13px; color: #ddd; background: #1e1e1e; height: 100vh; display: flex; flex-direction: column; }
+  header { display: flex; gap: 8px; align-items: center; padding: 8px 12px; background: #252526; border-bottom: 1px solid #333; }
+  header select, header input { background: #1e1e1e; color: #ddd; border: 1px solid #444; padding: 4px 6px; border-radius: 3px; font: inherit; }
+  /* custom connection dropdown: a native <select> can't align the [KIND] tags
+     (its popup ignores font-family), so we render our own with a monospace list. */
+  #conn { position: relative; width: 280px; font-family: Menlo, monospace; user-select: none; }
+  #conn .cur { background: #1e1e1e; border: 1px solid #444; border-radius: 3px; padding: 4px 22px 4px 8px; cursor: pointer; white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+  #conn .cur::after { content: '▾'; position: absolute; right: 8px; color: #888; }
+  #conn .menu { position: absolute; top: 100%; left: 0; right: 0; margin-top: 2px; background: #252526; border: 1px solid #444; border-radius: 3px; z-index: 20; max-height: 320px; overflow: auto; display: none; }
+  #conn.open .menu { display: block; }
+  #conn .opt { padding: 4px 8px; cursor: pointer; white-space: pre; }
+  #conn .opt:hover { background: #2a2d2e; }
+  #conn .opt.sel { background: #094771; }
+  header .title { font-weight: bold; color: rgb(163, 72, 72); margin-right: 2px; }
+  main { flex: 1; display: flex; min-height: 0; }
+  #sidebar { width: 300px; border-right: 1px solid #333; display: flex; flex-direction: column; min-height: 0; }
+  #search { padding: 6px; border-bottom: 1px solid #333; }
+  #search input { width: 100%; background: #1e1e1e; color: #ddd; border: 1px solid #444; padding: 5px; border-radius: 3px; font: inherit; }
+  #keys { flex: 1; overflow: auto; padding: 2px 0; }
+  .node { white-space: nowrap; cursor: pointer; user-select: none; line-height: 20px; }
+  .node:hover { background: #2a2d2e; }
+  .node.active { background: #094771; }
+  .node .label { display: inline-block; vertical-align: top; overflow: hidden; text-overflow: ellipsis; max-width: calc(100% - 20px); }
+  .node .tw { display: inline-block; width: 14px; text-align: center; color: #888; }
+  .node.leaf .tw { color: transparent; }
+  .node .count { color: #888; font-size: 11px; margin-left: 4px; }
+  .children.collapsed { display: none; }
+  #content { flex: 1; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  #value { flex: 1; overflow: auto; padding: 12px; }
+  .meta { padding: 8px 12px; background: #252526; border-bottom: 1px solid #333; display: flex; gap: 10px; align-items: center; }
+  .badge { background: #d33; color: #fff; padding: 1px 7px; border-radius: 3px; font-size: 11px; text-transform: uppercase; }
+  pre { margin: 0; white-space: pre-wrap; word-break: break-all; }
+  table { border-collapse: collapse; width: auto; max-width: 100%; }
+  td, th { border: 1px solid #333; padding: 4px 8px; text-align: left; vertical-align: top; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 600px; }
+  th { background: #252526; position: relative; }
+  th .rs { position: absolute; top: 0; right: 0; width: 6px; height: 100%; cursor: col-resize; user-select: none; }
+  th .rs:hover { background: #0e639c; }
+  #cmdbar { border-top: 1px solid #333; background: #252526; }
+  #cmdout { max-height: 160px; overflow: auto; padding: 8px 12px; color: #9cdcfe; white-space: pre-wrap; word-break: break-all; }
+  #cmdin { display: flex; padding: 6px; gap: 6px; }
+  #cmdin span { color: #d33; align-self: center; }
+  #cmdin input { flex: 1; background: #1e1e1e; color: #ddd; border: 1px solid #444; padding: 6px; border-radius: 3px; font: inherit; }
+  .empty { color: #888; padding: 20px; }
+  /* header connection action buttons */
+  .hbtn { background: #333; color: #ddd; border: 1px solid #444; border-radius: 3px; padding: 3px 8px; cursor: pointer; font: inherit; line-height: 1.4; }
+  .hbtn:hover { background: #0e639c; border-color: #0e639c; color: #fff; }
+  /* connection settings modal */
+  .modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 50; align-items: center; justify-content: center; }
+  .modal-bg.open { display: flex; }
+  .modal { background: #252526; border: 1px solid #444; border-radius: 5px; padding: 16px 18px; width: 420px; box-shadow: 0 8px 30px rgba(0,0,0,0.5); }
+  .modal-title { font-weight: bold; margin-bottom: 12px; color: #ddd; }
+  .frow { display: flex; align-items: center; margin-bottom: 8px; }
+  .frow label { width: 64px; color: #9ca3af; flex: 0 0 auto; }
+  .frow input, .frow select { flex: 1; background: #1e1e1e; color: #ddd; border: 1px solid #444; padding: 5px 6px; border-radius: 3px; font: inherit; }
+  .frow[hidden] { display: none; }
+  .modal-status { min-height: 18px; margin: 6px 0 10px; font-size: 12px; }
+  .modal-btns { display: flex; gap: 8px; justify-content: flex-end; }
+  .modal-btns button { background: #333; color: #ddd; border: 1px solid #444; border-radius: 3px; padding: 5px 14px; cursor: pointer; font: inherit; }
+  .modal-btns button:hover { background: #0e639c; border-color: #0e639c; color: #fff; }
+</style>
+</head>
+<body>
+<header>
+  <span class="title">⛁</span>
+  <div id="conn"><div class="cur"></div><div class="menu"></div></div>
+  <button id="connAdd" class="hbtn" title="Add connection">＋</button>
+  <button id="connEdit" class="hbtn" title="Edit connection">✎</button>
+  <button id="connDel" class="hbtn" title="Delete connection">🗑</button>
+</header>
+
+<!-- Connection settings modal (add / edit) -->
+<div id="connModalBg" class="modal-bg">
+  <div class="modal">
+    <div class="modal-title" id="connModalTitle">Add connection</div>
+    <div class="frow"><label>Name</label><input id="f_name"></div>
+    <div class="frow"><label>Kind</label>
+      <select id="f_kind"><option value="redis">redis</option><option value="mongo">mongo</option><option value="mysql">mysql</option></select>
+    </div>
+    <div class="frow" data-show="redis,mysql,mongo-form"><label>Host</label><input id="f_host" placeholder="127.0.0.1"></div>
+    <div class="frow" data-show="redis,mysql,mongo-form"><label>Port</label><input id="f_port" placeholder="6379"></div>
+    <div class="frow" data-show="mysql,mongo-form"><label>User</label><input id="f_user"></div>
+    <div class="frow" data-show="redis,mysql,mongo-form"><label>Auth</label><input id="f_auth" type="password"></div>
+    <div class="frow" data-show="mongo-form"><label>DB</label><input id="f_db"></div>
+    <div class="frow" data-show="mongo-url"><label>URI</label><input id="f_uri" placeholder="mongodb://user:pass@host:27017/admin"></div>
+    <div class="frow" data-show="mongo-form,mongo-url"><label>Mode</label>
+      <select id="f_mode"><option value="form">form</option><option value="url">url</option></select>
+    </div>
+    <div class="modal-status" id="connModalStatus"></div>
+    <div class="modal-btns">
+      <button id="connSaveBtn">OK</button>
+      <button id="connTestBtn">Test</button>
+      <button id="connCancelBtn">Cancel</button>
+    </div>
+  </div>
+</div>
+<main>
+  <div id="sidebar">
+    <div id="search"><input id="match" placeholder="search keys… (type to filter, or glob user:*)"></div>
+    <div id="keys"><div class="empty">loading…</div></div>
+  </div>
+  <div id="content">
+    <div class="meta" id="meta" style="display:none"><span class="badge" id="vtype"></span><span id="vkey"></span></div>
+    <div id="value"><div class="empty">select a key</div></div>
+    <div id="cmdbar">
+      <div id="cmdout"></div>
+      <div id="cmdin"><span>&gt;</span><input id="cmd" placeholder="raw redis command, e.g. GET foo"></div>
+    </div>
+  </div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+let activeKey = null;
+let currentContainer = ''; // container of the last selected entry, for content/cmd
+let currentEntry = '';     // last selected entry, to detect entry switches
+let currentQuery = '';     // mongo filter typed in the query box (per entry)
+let conns = [];            // [{name, kind}]
+
+function params(container) {
+  return `conn=${encodeURIComponent(connSel.value)}&container=${encodeURIComponent(container)}`;
+}
+
+// connKind returns the backend kind of the selected connection.
+function connKind() {
+  const c = conns[connSel.value];
+  return c ? c.kind : 'redis';
+}
+
+// isRelational reports whether the backend lists entries as a flat list with a
+// query bar and drop buttons (mongo collections / mysql tables), vs redis keys.
+function isRelational() { return connKind() !== 'redis'; }
+
+// entryNoun / containerNoun give backend-appropriate labels for confirm dialogs.
+function entryNoun() { return connKind() === 'mysql' ? 'table' : 'collection'; }
+function containerNoun() { return 'database'; }
+
+// kindColor tints a connection's dropdown entry by backend kind so
+// redis/mongo/mysql are distinguishable by color (matches the TUI).
+function kindColor(kind) {
+  return {mongo: '#8bc99a', mysql: '#90caf9'}[kind] || '#f6b8b1'; // default: light red (redis)
+}
+
+// connSel is a tiny compatibility shim over the custom dropdown so the rest of
+// the code can keep reading/writing a numeric `.value` like a <select>. onchange
+// is invoked on user selection (not on programmatic value set), matching <select>.
+const connSel = {
+  _i: 0,
+  onchange: null,
+  get value() { return this._i; },
+  set value(i) { this._i = Number(i) || 0; this.render(); },
+  // optLabel renders one entry: a fixed-width [KIND] tag (monospace-aligned) then
+  // the name. The tag is colored by kind.
+  _label(c) {
+    const kind = c.kind || 'redis';
+    const tag = ('[' + kind.toUpperCase() + ']').padEnd(8); // [REDIS]/[MONGO]/[MYSQL] -> aligned
+    return {kind, tag, name: c.name};
+  },
+  render() {
+    const cur = document.querySelector('#conn .cur');
+    const menu = document.querySelector('#conn .menu');
+    if (!conns.length) { cur.textContent = ''; menu.innerHTML = ''; return; }
+    const c = conns[this._i] || conns[0];
+    const L = this._label(c);
+    cur.innerHTML = `<span style="color:${kindColor(L.kind)}">${L.tag}</span>${escapeHtml(L.name)}`;
+    menu.innerHTML = conns.map((cc, i) => {
+      const l = this._label(cc);
+      return `<div class="opt${i === this._i ? ' sel' : ''}" data-i="${i}"><span style="color:${kindColor(l.kind)}">${l.tag}</span>${escapeHtml(l.name)}</div>`;
+    }).join('');
+  },
+};
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
+}
+
+async function loadConns() {
+  const r = await fetch('/api/conns');
+  const data = await r.json();
+  conns = data.conns || [];
+  // restore the connection selected on the last run.
+  let sel = 0;
+  if (data.selected >= 0 && data.selected < conns.length) sel = data.selected;
+  connSel.value = sel; // also renders the dropdown
+}
+
+// buildTree splits keys on ':' into a folder tree, matching the terminal view.
+function buildTree(keys) {
+  const root = { children: new Map(), count: 0 };
+  for (const key of keys) {
+    const parts = key.split(':');
+    let node = root, prefix = '';
+    for (let i = 0; i < parts.length; i++) {
+      prefix = i === 0 ? parts[0] : prefix + ':' + parts[i];
+      const leaf = i === parts.length - 1;
+      let child = node.children.get(parts[i]);
+      if (!child) {
+        child = { name: parts[i], key: prefix, leaf, children: new Map(), count: 0 };
+        node.children.set(parts[i], child);
+      }
+      child.count++;
+      node = child;
+    }
+  }
+  return root;
+}
+
+// makeRow builds a single tree row with a twistie and label.
+function makeRow(depth, twistie, label, isFolder, count) {
+  const row = document.createElement('div');
+  row.className = 'node' + (isFolder ? '' : ' leaf');
+  row.style.paddingLeft = (depth * 14 + 4) + 'px';
+  const tw = document.createElement('span');
+  tw.className = 'tw';
+  tw.textContent = twistie;
+  const lab = document.createElement('span');
+  lab.className = 'label';
+  lab.textContent = label;
+  row.appendChild(tw);
+  row.appendChild(lab);
+  if (count !== undefined) {
+    const cnt = document.createElement('span');
+    cnt.className = 'count';
+    cnt.textContent = '(' + count + ')';
+    row.appendChild(cnt);
+  }
+  return { row, tw };
+}
+
+// renderEntryNode renders the ':'-split entry tree under a container, depth >= 2.
+function renderEntryNode(node, depth, container) {
+  const frag = document.createDocumentFragment();
+  const names = [...node.children.keys()].sort();
+  for (const name of names) {
+    const n = node.children.get(name);
+    const isFolder = n.children.size > 0;
+    const { row, tw } = makeRow(depth, isFolder ? '▾' : '·', name, isFolder, isFolder ? n.count : undefined);
+    row.title = n.key;
+    if (isFolder) {
+      const kids = document.createElement('div');
+      kids.className = 'children';
+      kids.appendChild(renderEntryNode(n, depth + 1, container));
+      row.onclick = e => {
+        e.stopPropagation();
+        kids.classList.toggle('collapsed');
+        tw.textContent = kids.classList.contains('collapsed') ? '▸' : '▾';
+      };
+      frag.appendChild(row);
+      frag.appendChild(kids);
+    } else {
+      row.onclick = e => { e.stopPropagation(); loadContent(container, n.key, row); };
+      frag.appendChild(row);
+    }
+  }
+  return frag;
+}
+
+// renderFlatEntries renders entries as flat leaves (mongo collections, no ':' split).
+// Each collection gets a hover "×" button to drop it.
+function renderFlatEntries(entries, container) {
+  const frag = document.createDocumentFragment();
+  for (const name of [...entries].sort()) {
+    const { row } = makeRow(2, '·', name, false);
+    row.title = name;
+    row.style.position = 'relative';
+    row.onclick = e => { e.stopPropagation(); loadContent(container, name, row); };
+    const del = document.createElement('span');
+    del.textContent = '×';
+    del.title = 'Drop ' + entryNoun();
+    del.style.cssText = 'float:right; color:#d33; font-weight:bold; padding:0 8px; display:none;';
+    del.onclick = e => { e.stopPropagation(); dropCollection(container, name, row); };
+    row.onmouseenter = () => { del.style.display = 'inline'; };
+    row.onmouseleave = () => { del.style.display = 'none'; };
+    row.appendChild(del);
+    frag.appendChild(row);
+  }
+  return frag;
+}
+
+// dropCollection confirms and drops a mongo collection, then refreshes the tree.
+async function dropCollection(container, name, row) {
+  if (!confirm(`Drop ${entryNoun()} ${container}.${name}? This cannot be undone.`)) return;
+  const r = await fetch(`/api/drop?conn=${encodeURIComponent(connSel.value)}`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ container, entry: name })
+  });
+  const j = await r.json();
+  if (j.error) { alert('Drop failed: ' + j.error); return; }
+  row.remove();
+  if (activeKey === row) { $('value').innerHTML = '<div class="empty">select a key</div>'; $('meta').style.display = 'none'; }
+}
+
+// dropDatabase confirms and drops a mongo database, then removes it from the tree.
+async function dropDatabase(container, row, kids) {
+  if (!confirm(`Drop ${containerNoun()} ${container}? This removes ALL ${entryNoun()}s and cannot be undone.`)) return;
+  const r = await fetch(`/api/dropdb?conn=${encodeURIComponent(connSel.value)}`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ container })
+  });
+  const j = await r.json();
+  if (j.error) { alert('Drop failed: ' + j.error); return; }
+  row.remove();
+  if (kids) kids.remove();
+  $('value').innerHTML = '<div class="empty">select a key</div>';
+  $('meta').style.display = 'none';
+}
+
+// loadEntries fetches entries for a container and renders the entry tree.
+// Redis keys split on ':'; mongo collections render flat.
+async function loadEntries(container, box, tw, quiet) {
+  // quiet (live search re-filter) keeps the old list in place until the new one
+  // arrives, so the tree doesn't flash a short "loading…" line and shift.
+  if (!quiet) box.innerHTML = '<div class="empty" style="padding:4px 10px">loading…</div>';
+  const match = $('match').value || '*';
+  try {
+    const r = await fetch(`/api/entries?${params(container)}&match=${encodeURIComponent(match)}`);
+    const entries = await r.json();
+    box.innerHTML = '';
+    if (entries.error) { box.innerHTML = `<div class="empty" style="padding:4px 10px">${entries.error}</div>`; return; }
+    if (!entries.length) { box.innerHTML = '<div class="empty" style="padding:4px 10px">empty</div>'; return; }
+    if (isRelational()) {
+      box.appendChild(renderFlatEntries(entries, container));
+    } else {
+      box.appendChild(renderEntryNode(buildTree(entries), 2, container));
+    }
+  } catch (e) { box.innerHTML = `<div class="empty" style="padding:4px 10px">${e}</div>`; }
+}
+
+// loadKeys builds the server > container tree; entries load lazily on expand.
+async function loadKeys() {
+  const box = $('keys');
+  box.innerHTML = '<div class="empty">loading…</div>';
+  activeKey = null;
+  $('cmd').placeholder = {
+    mongo: 'mongo query, e.g. db.users.find({name:"a"})',
+    mysql: 'raw SQL, e.g. SELECT * FROM users LIMIT 10',
+  }[connKind()] || 'raw redis command, e.g. GET foo';
+  try {
+    const r = await fetch(`/api/containers?conn=${encodeURIComponent(connSel.value)}`);
+    const containers = await r.json();
+    if (containers.error) { box.innerHTML = `<div class="empty">${containers.error}</div>`; return; }
+    box.innerHTML = '';
+    const sel = conns[connSel.value];
+    const server = sel ? sel.name : '';
+    const { row: srow } = makeRow(0, '▾', server, true);
+    box.appendChild(srow);
+    containers.forEach((container, i) => {
+      const { row, tw } = makeRow(1, '▸', container, true);
+      const kids = document.createElement('div');
+      kids.className = 'children collapsed';
+      kids.dataset.container = container; // lets live search re-filter this group
+      let loaded = false;
+      row.onclick = e => {
+        e.stopPropagation();
+        const open = kids.classList.toggle('collapsed') === false;
+        tw.textContent = open ? '▾' : '▸';
+        if (open && !loaded) { loaded = true; loadEntries(container, kids, tw); }
+      };
+      if (isRelational()) {
+        const del = document.createElement('span');
+        del.textContent = '×';
+        del.title = 'Drop ' + containerNoun();
+        del.style.cssText = 'float:right; color:#d33; font-weight:bold; padding:0 8px; display:none;';
+        del.onclick = e => { e.stopPropagation(); dropDatabase(container, row, kids); };
+        row.onmouseenter = () => { del.style.display = 'inline'; };
+        row.onmouseleave = () => { del.style.display = 'none'; };
+        row.appendChild(del);
+      }
+      box.appendChild(row);
+      box.appendChild(kids);
+      if (i === 0) row.click(); // expand the first container by default
+    });
+  } catch (e) { box.innerHTML = `<div class="empty">${e}</div>`; }
+}
+
+// pending holds staged (uncommitted) cell edits for the current entry,
+// keyed by "row,col" → { td, orig, value, rowIdx, colIdx, oldRow, type }.
+let pending = new Map();
+let pendingCtx = null; // { container, entry, columns }
+
+function renderContent(c) {
+  $('meta').style.display = 'flex';
+  $('vtype').textContent = c.type;
+  $('vkey').textContent = c.entry;
+  const box = $('value');
+  pending = new Map();
+  pendingCtx = null;
+  if (c.kind === 'text') {
+    box.innerHTML = '<pre></pre>';
+    box.firstChild.textContent = c.text ?? '(nil)';
+    return;
+  }
+  if (c.type === 'stream') { renderStream(c, box); return; }
+  // table
+  const cols = c.columns || [];
+  const rows = c.rows || [];
+  const cellTypes = c.cellTypes || [];
+  const readOnly = c.readOnly || [];
+  pendingCtx = { container: currentContainer, entry: c.entry, columns: cols };
+
+  box.innerHTML = '';
+  if (isRelational()) box.appendChild(buildQueryBar());
+  box.appendChild(buildToolbar());
+  const table = document.createElement('table');
+  const head = document.createElement('tr');
+  // columns auto-size to content (table-layout:auto); the drag grip lets the
+  // user pin an explicit width when they want to widen/narrow a column.
+  ['#', ...cols].forEach((col, k) => {
+    const th = document.createElement('th');
+    th.textContent = col;
+    if (k > 0) addColResizer(th);
+    head.appendChild(th);
+  });
+  table.appendChild(head);
+  rows.forEach((row, i) => {
+    const tr = document.createElement('tr');
+    const idx = document.createElement('td');
+    idx.textContent = i + 1;
+    tr.appendChild(idx);
+    row.forEach((cell, j) => {
+      const td = document.createElement('td');
+      td.textContent = cell;
+      const type = (cellTypes[i] && cellTypes[i][j]) || '';
+      // tooltip shows the full value (and type) since long cells are truncated
+      td.title = type ? `${cell}\n(${type})` : cell;
+      const col = cols[j];
+      const editable = col !== '_id' && !readOnly.includes(col);
+      if (editable) {
+        td.style.cursor = 'pointer';
+        const rowTypes = cellTypes[i] || [];
+        td.ondblclick = () => editCell(td, row, rowTypes, i, j, type);
+      }
+      tr.appendChild(td);
+    });
+    table.appendChild(tr);
+  });
+  box.appendChild(table);
+  updateToolbar();
+}
+
+// fmtStreamId renders a stream entry ID "<ms>-<seq>" as a human time over the
+// raw id (the ms part is a unix-millis timestamp). Non-standard ids pass through.
+function fmtStreamId(id) {
+  const dash = id.indexOf('-');
+  const msPart = dash >= 0 ? id.slice(0, dash) : id;
+  const ms = Number(msPart);
+  if (!Number.isFinite(ms) || msPart === '' || !/^\d+$/.test(msPart)) return { time: '', raw: id };
+  const d = new Date(ms);
+  const time = d.toLocaleString(undefined, {
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  });
+  return { time, raw: id };
+}
+
+// renderStream renders a redis stream: a formatted Entry ID column, one column
+// per field, and a per-row trash button that XDELs the entry.
+function renderStream(c, box) {
+  const cols = c.columns || []; // ["id", field1, field2, …]
+  const rows = c.rows || [];
+  box.innerHTML = '';
+  const table = document.createElement('table');
+  const head = document.createElement('tr');
+  ['Entry ID', ...cols.slice(1)].forEach((col, k) => {
+    const th = document.createElement('th');
+    th.textContent = col;
+    if (k > 0) addColResizer(th);
+    head.appendChild(th);
+  });
+  head.appendChild(document.createElement('th')); // delete column
+  table.appendChild(head);
+  rows.forEach(row => {
+    const id = row[0];
+    const tr = document.createElement('tr');
+    const idTd = document.createElement('td');
+    const { time, raw } = fmtStreamId(id);
+    if (time) {
+      const t = document.createElement('div'); t.textContent = time;
+      const r = document.createElement('div'); r.textContent = raw;
+      r.style.cssText = 'color:#888; font-size:11px;';
+      idTd.appendChild(t); idTd.appendChild(r);
+    } else {
+      idTd.textContent = raw;
+    }
+    idTd.title = raw;
+    tr.appendChild(idTd);
+    row.slice(1).forEach(cell => {
+      const td = document.createElement('td');
+      td.textContent = cell;
+      td.title = cell;
+      tr.appendChild(td);
+    });
+    const delTd = document.createElement('td');
+    delTd.style.textAlign = 'center';
+    const del = document.createElement('span');
+    del.textContent = '🗑';
+    del.title = 'Delete entry';
+    del.style.cssText = 'cursor:pointer; opacity:.6;';
+    del.onmouseenter = () => del.style.opacity = '1';
+    del.onmouseleave = () => del.style.opacity = '.6';
+    del.onclick = () => delStreamEntry(c.entry, id, tr);
+    delTd.appendChild(del);
+    tr.appendChild(delTd);
+    table.appendChild(tr);
+  });
+  box.appendChild(table);
+}
+
+// delStreamEntry XDELs one stream entry (via the raw-command endpoint) and
+// removes its row on success.
+async function delStreamEntry(entry, id, tr) {
+  if (!confirm(`Delete stream entry ${id}?`)) return;
+  const r = await fetch(`/api/cmd?${params(currentContainer)}`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ cmd: `XDEL ${entry} ${id}` })
+  });
+  const j = await r.json();
+  if (j.error) { alert('Delete failed: ' + j.error); return; }
+  tr.remove();
+}
+
+// addColResizer attaches a drag handle to a header cell for manual column resize.
+function addColResizer(th) {
+  const grip = document.createElement('span');
+  grip.className = 'rs';
+  grip.onmousedown = e => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.pageX;
+    const startW = th.offsetWidth;
+    const onMove = ev => {
+      const w = Math.max(40, startW + ev.pageX - startX);
+      th.style.width = w + 'px';
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
+  th.appendChild(grip);
+}
+
+// buildQueryBar renders the mongo filter box shown above the table. Enter
+// reloads the current entry with the typed query; empty matches all.
+function buildQueryBar() {
+  const bar = document.createElement('div');
+  bar.style.cssText = 'display:flex; gap:6px; align-items:center; padding:0 0 8px;';
+  const label = document.createElement('span');
+  label.textContent = 'Query';
+  label.style.cssText = 'color:#9cdcfe;';
+  const input = document.createElement('input');
+  input.id = 'qbox';
+  input.value = currentQuery;
+  input.placeholder = connKind() === 'mysql'
+    ? 'WHERE id = 1   or   col = "x"  —  Enter to run, empty = all'
+    : '{"field": value}  or  db.coll.find({})  —  Enter to run, empty = all';
+  input.style.cssText = 'flex:1; background:#1e1e1e; color:#ddd; border:1px solid #444; padding:5px 7px; border-radius:3px; font:inherit;';
+  input.onkeydown = e => {
+    if (e.key === 'Enter') {
+      currentQuery = input.value.trim();
+      loadContent(pendingCtx.container, pendingCtx.entry, activeKey);
+    }
+  };
+  bar.appendChild(label);
+  bar.appendChild(input);
+  return bar;
+}
+
+// buildToolbar renders the commit/rollback bar shown above the table.
+function buildToolbar() {
+  const bar = document.createElement('div');
+  bar.id = 'editbar';
+  bar.style.cssText = 'display:none; gap:8px; align-items:center; padding:6px 0 10px;';
+  const count = document.createElement('span');
+  count.id = 'editcount';
+  count.style.cssText = 'background:#f5c518; color:#000; border-radius:10px; padding:1px 9px; font-weight:bold;';
+  const commit = document.createElement('button');
+  commit.textContent = 'Commit';
+  commit.style.cssText = 'background:#0e639c; color:#fff; border:none; padding:4px 12px; border-radius:3px; cursor:pointer; font:inherit;';
+  commit.onclick = commitPending;
+  const rollback = document.createElement('button');
+  rollback.textContent = 'Rollback';
+  rollback.style.cssText = 'background:#3a3d41; color:#ddd; border:none; padding:4px 12px; border-radius:3px; cursor:pointer; font:inherit;';
+  rollback.onclick = () => loadContent(pendingCtx.container, pendingCtx.entry, activeKey);
+  bar.appendChild(count);
+  bar.appendChild(commit);
+  bar.appendChild(rollback);
+  return bar;
+}
+
+// updateToolbar shows or hides the commit bar based on pending count.
+function updateToolbar() {
+  const bar = $('editbar');
+  if (!bar) return;
+  if (pending.size === 0) { bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+  $('editcount').textContent = pending.size;
+}
+
+// editCell swaps a table cell into an input and stages (does not save) the change.
+function editCell(td, row, rowTypes, rowIdx, colIdx, type) {
+  const key = rowIdx + ',' + colIdx;
+  const staged = pending.get(key);
+  const orig = staged ? staged.orig : td.textContent;
+  const input = document.createElement('input');
+  input.value = td.textContent;
+  input.style.width = '100%';
+  input.style.font = 'inherit';
+  input.style.background = '#1e1e1e';
+  input.style.color = '#ddd';
+  input.style.border = '1px solid #007acc';
+  td.textContent = '';
+  td.appendChild(input);
+  input.focus();
+  input.select();
+  let done = false;
+  const finish = (commit) => {
+    if (done) return;
+    done = true;
+    const val = commit ? input.value : orig;
+    td.textContent = val;
+    if (val === orig) {
+      pending.delete(key);
+      td.style.background = '';
+      td.style.color = '';
+    } else {
+      pending.set(key, { orig, value: val, rowIdx, colIdx, oldRow: row, oldRowTypes: rowTypes, type });
+      td.style.background = '#f5c518';
+      td.style.color = '#000';
+    }
+    updateToolbar();
+  };
+  input.onkeydown = e => {
+    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+    else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+  };
+  input.onblur = () => finish(true);
+}
+
+// commitPending POSTs every staged edit, then refreshes the entry.
+async function commitPending() {
+  if (!pendingCtx || pending.size === 0) return;
+  for (const e of pending.values()) {
+    const r = await fetch(`/api/update?conn=${encodeURIComponent(connSel.value)}`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        container: pendingCtx.container, entry: pendingCtx.entry,
+        columns: pendingCtx.columns, row: e.rowIdx, column: e.colIdx,
+        oldRow: e.oldRow, oldRowTypes: e.oldRowTypes, value: e.value, oldType: e.type,
+      })
+    });
+    const j = await r.json();
+    if (j.error) { alert('Commit failed: ' + j.error); return; }
+  }
+  loadContent(pendingCtx.container, pendingCtx.entry, activeKey);
+}
+
+async function loadContent(container, entry, el) {
+  currentContainer = container;
+  // switching to a different entry clears the previous query filter.
+  if (entry !== currentEntry) { currentQuery = ''; currentEntry = entry; }
+  if (activeKey) activeKey.classList.remove('active');
+  if (el) { el.classList.add('active'); activeKey = el; }
+  let url = `/api/content?${params(container)}&entry=${encodeURIComponent(entry)}`;
+  if (currentQuery) url += `&query=${encodeURIComponent(currentQuery)}`;
+  const r = await fetch(url);
+  const c = await r.json();
+  if (c.error) { $('value').innerHTML = `<div class="empty">${c.error}</div>`; return; }
+  renderContent(c);
+}
+
+async function runCmd(cmd) {
+  const out = $('cmdout');
+  out.innerHTML += `<div>${currentContainer || ''}&gt; ${cmd}</div>`;
+  try {
+    const r = await fetch(`/api/cmd?${params(currentContainer)}`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({cmd})
+    });
+    const j = await r.json();
+    const line = document.createElement('div');
+    line.textContent = j.error ? `(error) ${j.error}` : j.reply;
+    out.appendChild(line);
+  } catch (e) {
+    const line = document.createElement('div'); line.textContent = String(e); out.appendChild(line);
+  }
+  out.scrollTop = out.scrollHeight;
+}
+
+// onConnChange mirrors the old <select> onchange: persist selection + reload.
+function onConnChange() {
+  fetch(`/api/select?conn=${encodeURIComponent(connSel.value)}`, {method: 'POST'});
+  loadKeys();
+}
+
+// Custom dropdown interactions: toggle on the current-value box, pick on an
+// option, close on outside click.
+$('conn').querySelector('.cur').onclick = (e) => {
+  e.stopPropagation();
+  $('conn').classList.toggle('open');
+};
+$('conn').querySelector('.menu').onclick = (e) => {
+  const opt = e.target.closest('.opt');
+  if (!opt) return;
+  $('conn').classList.remove('open');
+  const i = Number(opt.dataset.i);
+  if (i === connSel.value) return; // no change
+  connSel.value = i; // re-renders
+  onConnChange();
+};
+document.addEventListener('click', () => $('conn').classList.remove('open'));
+
+// ---- Connection add / edit / delete ----
+
+let connEditIndex = -1; // -1 = adding a new connection; else editing this index
+
+// connFormState returns the "mode" used to decide which fields are visible:
+// 'redis', 'mysql', 'mongo-form', or 'mongo-url'.
+function connFormState() {
+  const kind = $('f_kind').value;
+  if (kind !== 'mongo') return kind;
+  return $('f_mode').value === 'url' ? 'mongo-url' : 'mongo-form';
+}
+
+// updateConnFields shows only the rows relevant to the current kind/mode.
+function updateConnFields() {
+  const state = connFormState();
+  document.querySelectorAll('#connModalBg .frow[data-show]').forEach(row => {
+    row.hidden = !row.dataset.show.split(',').includes(state);
+  });
+  // the Mode selector only applies to mongo
+  $('f_mode').closest('.frow').hidden = $('f_kind').value !== 'mongo';
+}
+
+// openConnModal fills and shows the modal. conf===null means add.
+function openConnModal(conf, index) {
+  connEditIndex = index;
+  $('connModalTitle').textContent = conf ? 'Edit connection' : 'Add connection';
+  $('connModalStatus').textContent = '';
+  const c = conf || {};
+  $('f_name').value = c.name || '';
+  $('f_kind').value = c.kind || 'redis';
+  $('f_host').value = c.host || '';
+  $('f_port').value = c.port ? String(c.port) : '';
+  $('f_user').value = c.user || '';
+  $('f_auth').value = c.auth || '';
+  $('f_db').value = c.db || '';
+  $('f_uri').value = c.uri || '';
+  // an existing mongo conn with a URI was saved in URL mode
+  $('f_mode').value = (c.kind === 'mongo' && c.uri) ? 'url' : 'form';
+  updateConnFields();
+  $('connModalBg').classList.add('open');
+  $('f_name').focus();
+}
+
+function closeConnModal() { $('connModalBg').classList.remove('open'); }
+
+// connBodyFromForm assembles the JSON payload from the form fields.
+function connBodyFromForm() {
+  const kind = $('f_kind').value;
+  const b = { index: connEditIndex, name: $('f_name').value.trim(), kind };
+  if (kind === 'mongo' && $('f_mode').value === 'url') {
+    b.uri = $('f_uri').value.trim();
+  } else {
+    b.host = $('f_host').value.trim();
+    b.port = parseInt($('f_port').value, 10) || defaultPort(kind);
+    b.user = $('f_user').value.trim();
+    b.auth = $('f_auth').value;
+    if (kind === 'mongo') b.db = $('f_db').value.trim();
+  }
+  return b;
+}
+
+function defaultPort(kind) {
+  return {mongo: 27017, mysql: 3306}[kind] || 6379;
+}
+
+$('f_kind').onchange = updateConnFields;
+$('f_mode').onchange = updateConnFields;
+
+$('connAdd').onclick = () => openConnModal(null, -1);
+$('connEdit').onclick = () => {
+  const c = conns[connSel.value];
+  if (c) openConnModal(c, connSel.value);
+};
+$('connDel').onclick = async () => {
+  const c = conns[connSel.value];
+  if (!c) return;
+  if (!confirm(`Delete connection "${c.name}"? This cannot be undone.`)) return;
+  const r = await fetch(`/api/conn/delete?conn=${encodeURIComponent(connSel.value)}`, {method: 'POST'});
+  const j = await r.json();
+  if (j.error) { alert('Delete failed: ' + j.error); return; }
+  await loadConns();
+  await onConnChange();
+};
+$('connCancelBtn').onclick = closeConnModal;
+$('connTestBtn').onclick = async () => {
+  const b = connBodyFromForm();
+  if (!b.name) { $('connModalStatus').innerHTML = '<span style="color:#e6b422">Name is required</span>'; return; }
+  $('connModalStatus').innerHTML = '<span style="color:#888">Connecting…</span>';
+  const r = await fetch('/api/conn/test', {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(b)
+  });
+  const j = await r.json();
+  $('connModalStatus').innerHTML = j.error
+    ? `<span style="color:#e74c3c">✖ ${j.error}</span>`
+    : '<span style="color:#2ecc71">● Connect OK</span>';
+};
+$('connSaveBtn').onclick = async () => {
+  const b = connBodyFromForm();
+  if (!b.name) { $('connModalStatus').innerHTML = '<span style="color:#e6b422">Name is required</span>'; return; }
+  const r = await fetch('/api/conn/save', {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(b)
+  });
+  const j = await r.json();
+  if (j.error) { $('connModalStatus').innerHTML = `<span style="color:#e74c3c">${j.error}</span>`; return; }
+  closeConnModal();
+  const wasAdding = connEditIndex < 0;
+  await loadConns();
+  if (wasAdding) connSel.value = conns.length - 1; // select the new one
+  await onConnChange();
+};
+
+// applySearch re-filters entries of currently-expanded containers using the
+// search box, WITHOUT rebuilding the container tree — so the user's expand /
+// collapse state is preserved while typing.
+function applySearch() {
+  document.querySelectorAll('#keys .children').forEach(kids => {
+    if (kids.classList.contains('collapsed')) return; // skip collapsed groups
+    const container = kids.dataset.container;
+    if (container === undefined) return;
+    const tw = kids.previousElementSibling.querySelector('.tw');
+    loadEntries(container, kids, tw, true);
+  });
+}
+
+// live search: re-filter as the user types, debounced so we don't refetch on
+// every keystroke. Enter still forces an immediate reload.
+let matchTimer = null;
+$('match').oninput = () => {
+  clearTimeout(matchTimer);
+  matchTimer = setTimeout(applySearch, 200);
+};
+$('match').onkeydown = e => { if (e.key === 'Enter') { clearTimeout(matchTimer); applySearch(); } };
+$('cmd').onkeydown = e => {
+  if (e.key === 'Enter' && e.target.value.trim()) { runCmd(e.target.value.trim()); e.target.value = ''; }
+};
+
+(async () => { await loadConns(); await loadKeys(); })();
+</script>
+</body>
+</html>
