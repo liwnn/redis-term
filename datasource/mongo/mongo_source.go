@@ -85,6 +85,11 @@ func (s *MongoSource) Content(container, entry string, page datasource.Page) (da
 	if limit <= 0 {
 		limit = defaultDocLimit
 	}
+	// A .limit(N) chained on the query statement overrides the paging default,
+	// so editing the displayed statement actually changes how many docs load.
+	if n, ok := shellLimit(page.Query); ok {
+		limit = n
+	}
 	opt := options.Find().SetLimit(limit)
 	if page.Skip > 0 {
 		opt.SetSkip(int64(page.Skip))
@@ -136,7 +141,19 @@ func (s *MongoSource) Content(container, entry string, page datasource.Page) (da
 		Rows:      rows,
 		CellTypes: cellTypes,
 		Total:     int(total),
+		Query:     findStatement(entry, filter, limit),
 	}, nil
+}
+
+// findStatement renders the shell-style find() call that produced the content,
+// e.g. db.users.find({"age":{"$gt":18}}).limit(100). An empty filter renders as
+// find({}); the limit reflects the applied document cap.
+func findStatement(entry string, filter interface{}, limit int64) string {
+	body := "{}"
+	if b, err := bson.MarshalExtJSON(filter, false, false); err == nil {
+		body = string(b)
+	}
+	return fmt.Sprintf("db.%s.find(%s).limit(%d)", entry, body, limit)
 }
 
 // Update writes a single document field change via UpdateOne matched on _id.
@@ -289,7 +306,34 @@ func shellFilter(q string) (string, bool) {
 		return "", false
 	}
 	start := open + len(".find(")
-	end := strings.LastIndex(q, ")")
+	// Find the paren that closes this find(...) call, not the last ')' in the
+	// string — a trailing chain like .limit(100) has its own parens. Track depth
+	// across (), skipping {} / [] contents so a paren inside the filter doesn't
+	// throw off the count.
+	end := -1
+	depth, brace := 1, 0
+	for i := start; i < len(q); i++ {
+		switch q[i] {
+		case '{', '[':
+			brace++
+		case '}', ']':
+			brace--
+		case '(':
+			if brace == 0 {
+				depth++
+			}
+		case ')':
+			if brace == 0 {
+				depth--
+				if depth == 0 {
+					end = i
+				}
+			}
+		}
+		if end >= 0 {
+			break
+		}
+	}
 	if end < start {
 		return "", false
 	}
@@ -299,7 +343,7 @@ func shellFilter(q string) (string, bool) {
 	}
 	// Take the first argument (the filter), splitting on the top-level comma
 	// that separates filter from projection.
-	depth := 0
+	depth = 0
 	for i, r := range inner {
 		switch r {
 		case '{', '[':
@@ -313,6 +357,26 @@ func shellFilter(q string) (string, bool) {
 		}
 	}
 	return inner, true
+}
+
+// shellLimit extracts N from a `.limit(N)` chained on a find() statement, e.g.
+// db.users.find({}).limit(50). Returns the value and true when a valid positive
+// limit is present; false when absent or unparseable (caller keeps its default).
+func shellLimit(q string) (int64, bool) {
+	i := strings.LastIndex(q, ".limit(")
+	if i < 0 {
+		return 0, false
+	}
+	rest := q[i+len(".limit("):]
+	end := strings.IndexByte(rest, ')')
+	if end < 0 {
+		return 0, false
+	}
+	n, err := strconv.ParseInt(strings.TrimSpace(rest[:end]), 10, 64)
+	if err != nil || n <= 0 {
+		return 0, false
+	}
+	return n, true
 }
 
 // DropEntry drops a collection from a database.

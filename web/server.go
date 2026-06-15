@@ -313,6 +313,7 @@ type contentResp struct {
 	Text      string     `json:"text"`
 	Total     int        `json:"total"`
 	ReadOnly  []string   `json:"readOnly"`
+	Query     string     `json:"query"`
 }
 
 // handleContent returns the right-pane payload for an entry.
@@ -344,7 +345,7 @@ func (s *Server) handleContent(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, contentResp{
 		Entry: entry, Kind: kind, Type: c.Type,
 		Columns: c.Columns, Rows: c.Rows, CellTypes: c.CellTypes,
-		Text: c.Text, Total: c.Total, ReadOnly: c.ReadOnly,
+		Text: c.Text, Total: c.Total, ReadOnly: c.ReadOnly, Query: c.Query,
 	})
 }
 

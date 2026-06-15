@@ -85,10 +85,24 @@ func (s *MySQLSource) Content(container, entry string, page datasource.Page) (da
 	}
 	table := quoteIdent(container) + "." + quoteIdent(entry)
 
-	where := whereClause(page.Query)
-	q := fmt.Sprintf("SELECT * FROM %s%s LIMIT %d", table, where, limit)
-	if page.Skip > 0 {
-		q += fmt.Sprintf(" OFFSET %d", page.Skip)
+	// The query box may carry either a full SELECT-shaped statement (the user
+	// edited the displayed statement and pressed Enter) or a bare WHERE
+	// fragment. A full statement runs verbatim, after a read-only guard so the
+	// box can't mutate data; a fragment is folded into a default SELECT.
+	var (
+		q        string
+		where    string
+		fullStmt bool
+	)
+	if trimmed := strings.TrimSpace(page.Query); trimmed != "" && isReadOnlyStmt(trimmed) {
+		q = trimmed
+		fullStmt = true
+	} else {
+		where = whereClause(page.Query)
+		q = fmt.Sprintf("SELECT * FROM %s%s LIMIT %d", table, where, limit)
+		if page.Skip > 0 {
+			q += fmt.Sprintf(" OFFSET %d", page.Skip)
+		}
 	}
 
 	columns, rows, cellTypes, err := s.queryTable(q)
@@ -97,8 +111,10 @@ func (s *MySQLSource) Content(container, entry string, page datasource.Page) (da
 	}
 
 	total := len(rows)
-	if n, err := s.count(fmt.Sprintf("SELECT COUNT(*) FROM %s%s", table, where)); err == nil {
-		total = n
+	if !fullStmt {
+		if n, err := s.count(fmt.Sprintf("SELECT COUNT(*) FROM %s%s", table, where)); err == nil {
+			total = n
+		}
 	}
 
 	pks, err := s.primaryKeys(container, entry)
@@ -114,6 +130,7 @@ func (s *MySQLSource) Content(container, entry string, page datasource.Page) (da
 		CellTypes: cellTypes,
 		Total:     total,
 		ReadOnly:  pks,
+		Query:     q,
 	}, nil
 }
 

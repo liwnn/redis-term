@@ -264,7 +264,6 @@ func (t *DSTree) onChanged(node *tview.TreeNode) {
 	t.curContainer = ref.container
 	t.curEntry = ref.name
 	t.curQuery = ""
-	t.preview.SetQueryText("")
 	t.cur = c
 	t.showContent(c)
 }
@@ -273,6 +272,9 @@ func (t *DSTree) showContent(c datasource.Content) {
 	p := t.preview
 	p.Clear()
 	p.SetKeyType(c.Type)
+	// Mirror the full backend statement (SELECT ... / db.coll.find(...)) into the
+	// query box so the user can see and edit what ran.
+	p.SetQueryText(c.Query)
 	if c.Kind == datasource.KindText {
 		p.ShowText(c.Text, false)
 		return

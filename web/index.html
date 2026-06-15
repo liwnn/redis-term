@@ -6,7 +6,8 @@
 <title>redis-term</title>
 <style>
   * { box-sizing: border-box; }
-  body { margin: 0; font-family: -apple-system, Menlo, monospace; font-size: 13px; color: #ddd; background: #1e1e1e; height: 100vh; display: flex; flex-direction: column; }
+  html, body { overscroll-behavior: none; }
+  body { margin: 0; font-family: -apple-system, Menlo, monospace; font-size: 13px; color: #ddd; background: #1e1e1e; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
   header { display: flex; gap: 8px; align-items: center; padding: 8px 12px; background: #252526; border-bottom: 1px solid #333; }
   header select, header input { background: #1e1e1e; color: #ddd; border: 1px solid #444; padding: 4px 6px; border-radius: 3px; font: inherit; }
   /* custom connection dropdown: a native <select> can't align the [KIND] tags
@@ -34,13 +35,19 @@
   .node .count { color: #888; font-size: 11px; margin-left: 4px; }
   .children.collapsed { display: none; }
   #content { flex: 1; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
-  #value { flex: 1; overflow: auto; padding: 12px; }
+  #value { flex: 1; overflow: auto; overscroll-behavior: contain; padding: 0 12px 12px; }
   .meta { padding: 8px 12px; background: #252526; border-bottom: 1px solid #333; display: flex; gap: 10px; align-items: center; }
   .badge { background: #d33; color: #fff; padding: 1px 7px; border-radius: 3px; font-size: 11px; text-transform: uppercase; }
   pre { margin: 0; white-space: pre-wrap; word-break: break-all; }
-  table { border-collapse: collapse; width: auto; max-width: 100%; }
-  td, th { border: 1px solid #333; padding: 4px 8px; text-align: left; vertical-align: top; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 600px; }
-  th { background: #252526; position: relative; }
+  table { border-collapse: separate; border-spacing: 0; width: auto; max-width: 100%; }
+  td, th { border: 1px solid #333; border-left: none; padding: 4px 8px; text-align: left; vertical-align: top; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 600px; }
+  td:first-child, th:first-child { border-left: 1px solid #333; }
+  /* sticky header: pinned below the query bar (whose height is --qh). With
+     border-collapse separate, sticky cells keep their borders while scrolling. */
+  th { background: #252526; position: sticky; top: var(--qh, 0px); z-index: 3; }
+  tr:not(:first-child) td { border-top: none; }
+  /* the sticky query bar pinned to the top of the scroll area */
+  .qbar { position: sticky; top: 0; z-index: 4; background: #1e1e1e; padding: 12px 0 8px; }
   th .rs { position: absolute; top: 0; right: 0; width: 6px; height: 100%; cursor: col-resize; user-select: none; }
   th .rs:hover { background: #0e639c; }
   #cmdbar { border-top: 1px solid #333; background: #252526; }
@@ -254,7 +261,7 @@ function renderEntryNode(node, depth, container) {
       frag.appendChild(row);
       frag.appendChild(kids);
     } else {
-      row.onclick = e => { e.stopPropagation(); loadContent(container, n.key, row); };
+      row.onclick = e => { e.stopPropagation(); loadContent(container, n.key, row, true); };
       frag.appendChild(row);
     }
   }
@@ -269,7 +276,7 @@ function renderFlatEntries(entries, container) {
     const { row } = makeRow(2, '·', name, false);
     row.title = name;
     row.style.position = 'relative';
-    row.onclick = e => { e.stopPropagation(); loadContent(container, name, row); };
+    row.onclick = e => { e.stopPropagation(); loadContent(container, name, row, true); };
     const del = document.createElement('span');
     del.textContent = '×';
     del.title = 'Drop ' + entryNoun();
@@ -337,10 +344,10 @@ async function loadKeys() {
   const box = $('keys');
   box.innerHTML = '<div class="empty">loading…</div>';
   activeKey = null;
-  $('cmd').placeholder = {
-    mongo: 'mongo query, e.g. db.users.find({name:"a"})',
-    mysql: 'raw SQL, e.g. SELECT * FROM users LIMIT 10',
-  }[connKind()] || 'raw redis command, e.g. GET foo';
+  // The bottom command bar is redis-only now; mongo/mysql use the single Query
+  // box above the table (which also runs non-table commands).
+  $('cmdbar').style.display = isRelational() ? 'none' : '';
+  $('cmd').placeholder = 'raw redis command, e.g. GET foo';
   try {
     const r = await fetch(`/api/containers?conn=${encodeURIComponent(connSel.value)}`);
     const containers = await r.json();
@@ -348,8 +355,18 @@ async function loadKeys() {
     box.innerHTML = '';
     const sel = conns[connSel.value];
     const server = sel ? sel.name : '';
-    const { row: srow } = makeRow(0, '▾', server, true);
+    const { row: srow, tw: stw } = makeRow(0, '▾', server, true);
     box.appendChild(srow);
+    // Containers live in a child group under the server row so the whole tree
+    // collapses from its first level.
+    const serverKids = document.createElement('div');
+    serverKids.className = 'children';
+    srow.onclick = e => {
+      e.stopPropagation();
+      const open = serverKids.classList.toggle('collapsed') === false;
+      stw.textContent = open ? '▾' : '▸';
+    };
+    box.appendChild(serverKids);
     containers.forEach((container, i) => {
       const { row, tw } = makeRow(1, '▸', container, true);
       const kids = document.createElement('div');
@@ -372,8 +389,8 @@ async function loadKeys() {
         row.onmouseleave = () => { del.style.display = 'none'; };
         row.appendChild(del);
       }
-      box.appendChild(row);
-      box.appendChild(kids);
+      serverKids.appendChild(row);
+      serverKids.appendChild(kids);
       if (i === 0) row.click(); // expand the first container by default
     });
   } catch (e) { box.innerHTML = `<div class="empty">${e}</div>`; }
@@ -392,7 +409,7 @@ function renderContent(c) {
   pending = new Map();
   pendingCtx = null;
   if (c.kind === 'text') {
-    box.innerHTML = '<pre></pre>';
+    box.innerHTML = '<pre style="padding-top:12px"></pre>';
     box.firstChild.textContent = c.text ?? '(nil)';
     return;
   }
@@ -405,7 +422,18 @@ function renderContent(c) {
   pendingCtx = { container: currentContainer, entry: c.entry, columns: cols };
 
   box.innerHTML = '';
-  if (isRelational()) box.appendChild(buildQueryBar());
+  box.style.setProperty('--qh', '0px');
+  // Prefill the query box with the full statement the backend ran (SELECT ... /
+  // db.coll.find(...)) only when the box is empty — i.e. on a fresh key switch,
+  // where loadContent cleared currentQuery. When the user ran their own
+  // statement, currentQuery holds their exact input (newlines and all), so keep
+  // it rather than overwrite with the backend's normalized single line.
+  let qbar = null;
+  if (isRelational()) {
+    if (!currentQuery) currentQuery = c.query || '';
+    qbar = buildQueryBar();
+    box.appendChild(qbar);
+  }
   box.appendChild(buildToolbar());
   const table = document.createElement('table');
   const head = document.createElement('tr');
@@ -442,6 +470,13 @@ function renderContent(c) {
   });
   box.appendChild(table);
   updateToolbar();
+  // Pin the sticky header right below the sticky query bar by publishing the
+  // bar's measured height; the qout text area can change it, so re-measure.
+  if (qbar) {
+    const setQH = () => box.style.setProperty('--qh', qbar.offsetHeight + 'px');
+    setQH();
+    new ResizeObserver(setQH).observe(qbar);
+  }
 }
 
 // fmtStreamId renders a stream entry ID "<ms>-<seq>" as a human time over the
@@ -465,6 +500,7 @@ function renderStream(c, box) {
   const cols = c.columns || []; // ["id", field1, field2, …]
   const rows = c.rows || [];
   box.innerHTML = '';
+  box.style.setProperty('--qh', '0px');
   const table = document.createElement('table');
   const head = document.createElement('tr');
   ['Entry ID', ...cols.slice(1)].forEach((col, k) => {
@@ -548,30 +584,98 @@ function addColResizer(th) {
   th.appendChild(grip);
 }
 
-// buildQueryBar renders the mongo filter box shown above the table. Enter
-// reloads the current entry with the typed query; empty matches all.
+// buildQueryBar renders the single query box shown above the table for
+// mongo/mysql. It replaces the old bottom command console: a table-shaped
+// statement (find / SELECT / bare filter) refreshes the table, while any other
+// command (count, runCommand, SHOW, …) prints its result in the text area just
+// below the box. Enter runs; empty matches all.
 function buildQueryBar() {
+  const wrap = document.createElement('div');
+  wrap.className = 'qbar';
   const bar = document.createElement('div');
-  bar.style.cssText = 'display:flex; gap:6px; align-items:center; padding:0 0 8px;';
+  bar.style.cssText = 'display:flex; gap:6px; align-items:flex-start;';
   const label = document.createElement('span');
   label.textContent = 'Query';
-  label.style.cssText = 'color:#9cdcfe;';
-  const input = document.createElement('input');
+  label.style.cssText = 'color:#9cdcfe; padding-top:6px;';
+  // A textarea (not an input) so it grows with multi-line statements. Enter
+  // runs; Shift+Enter inserts a newline. It auto-grows to fit its content (up to
+  // a cap, then scrolls) and can still be dragged taller manually.
+  const input = document.createElement('textarea');
   input.id = 'qbox';
+  input.rows = 1;
   input.value = currentQuery;
   input.placeholder = connKind() === 'mysql'
-    ? 'WHERE id = 1   or   col = "x"  —  Enter to run, empty = all'
-    : '{"field": value}  or  db.coll.find({})  —  Enter to run, empty = all';
-  input.style.cssText = 'flex:1; background:#1e1e1e; color:#ddd; border:1px solid #444; padding:5px 7px; border-radius:3px; font:inherit;';
+    ? 'WHERE id = 1   ·   SELECT …   ·   SHOW INDEX …  —  Enter to run (Shift+Enter = newline)'
+    : 'db.coll.find({})   ·   db.coll.count()   ·   db.runCommand({…})  —  Enter to run (Shift+Enter = newline)';
+  input.style.cssText = 'flex:1; min-height:30px; max-height:240px; background:#1e1e1e; color:#ddd; border:1px solid #444; padding:5px 7px; border-radius:3px; font:inherit; resize:vertical; white-space:pre; overflow:auto; box-sizing:border-box;';
+  // autoGrow resizes the box to fit its content so new lines lift the bottom
+  // edge, capped by max-height (then it scrolls). Manual drag still works but is
+  // reset on the next keystroke.
+  const autoGrow = () => {
+    input.style.height = 'auto';
+    input.style.height = input.scrollHeight + 'px';
+  };
+  input.oninput = autoGrow;
+  requestAnimationFrame(autoGrow); // fit the prefilled statement on first render
   input.onkeydown = e => {
-    if (e.key === 'Enter') {
-      currentQuery = input.value.trim();
-      loadContent(pendingCtx.container, pendingCtx.entry, activeKey);
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      runQueryBox(input.value);
     }
   };
   bar.appendChild(label);
   bar.appendChild(input);
-  return bar;
+  // Text output for non-table commands; hidden until something is printed.
+  const out = document.createElement('pre');
+  out.id = 'qout';
+  out.style.cssText = 'display:none; margin:6px 0 0; max-height:160px; overflow:auto; background:#1e1e1e; border:1px solid #444; border-radius:3px; padding:6px 8px; color:#9cdcfe; white-space:pre-wrap; word-break:break-all;';
+  wrap.appendChild(bar);
+  wrap.appendChild(out);
+  return wrap;
+}
+
+// isTableQuery reports whether a query box statement should refresh the table
+// (handled by /api/content) rather than print text (handled by /api/cmd).
+// Table-shaped: empty, a bare mongo filter, find(...), a WHERE fragment, or a
+// SELECT. Everything else (count/runCommand/findOne, SHOW/DESCRIBE/EXPLAIN) is
+// a command whose output is shown as text.
+function isTableQuery(q) {
+  const s = q.trim();
+  if (s === '') return true;
+  if (connKind() === 'mysql') {
+    return /^(where|select)\b/i.test(s);
+  }
+  // mongo
+  if (s[0] === '{') return true;
+  return /^db\.[\w.$]+\.find\s*\(/.test(s);
+}
+
+// runQueryBox dispatches a query box submission: table-shaped statements reload
+// the table via the content endpoint; other commands run via /api/cmd and print
+// to the text area under the box.
+async function runQueryBox(raw) {
+  const q = raw.trim();
+  const out = $('qout');
+  if (isTableQuery(q)) {
+    if (out) out.style.display = 'none';
+    currentQuery = q;
+    loadContent(pendingCtx.container, pendingCtx.entry, activeKey);
+    return;
+  }
+  if (!out) return;
+  out.style.display = 'block';
+  out.textContent = '> ' + q + '\n';
+  try {
+    const r = await fetch(`/api/cmd?${params(currentContainer)}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cmd: q })
+    });
+    const j = await r.json();
+    out.textContent += j.error ? `(error) ${j.error}` : j.reply;
+  } catch (e) {
+    out.textContent += String(e);
+  }
+  out.scrollTop = out.scrollHeight;
 }
 
 // buildToolbar renders the commit/rollback bar shown above the table.
@@ -663,10 +767,13 @@ async function commitPending() {
   loadContent(pendingCtx.container, pendingCtx.entry, activeKey);
 }
 
-async function loadContent(container, entry, el) {
+async function loadContent(container, entry, el, fromTree) {
   currentContainer = container;
-  // switching to a different entry clears the previous query filter.
-  if (entry !== currentEntry) { currentQuery = ''; currentEntry = entry; }
+  // Clear the query filter when switching to a different entry, or whenever the
+  // user (re)clicks a tree node — even the current one — so a tree click always
+  // resets to the default statement. Re-runs from the query box / commit /
+  // rollback pass fromTree=false and keep the user's typed statement.
+  if (fromTree || entry !== currentEntry) { currentQuery = ''; currentEntry = entry; }
   if (activeKey) activeKey.classList.remove('active');
   if (el) { el.classList.add('active'); activeKey = el; }
   let url = `/api/content?${params(container)}&entry=${encodeURIComponent(entry)}`;

@@ -26,6 +26,9 @@ type Content struct {
 	Text      string     // populated when Kind == KindText
 	Total     int        // total rows/documents available (for paging UIs)
 	ReadOnly  []string   // column names that cannot be edited (mysql PK, mongo _id). nil => all editable
+	Query     string     // the full backend statement that produced this content
+	// (mysql: SELECT ...; mongo: db.<coll>.find(...)), shown in the query box so
+	// the user can edit and re-run it. Empty for backends without a query box.
 }
 
 // Edit describes a single table cell change for Datasource.Update.
