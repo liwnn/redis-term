@@ -241,6 +241,12 @@ func (p *Preview) SetSaveFunc(f func(oldValue, newValue string)) {
 	p.textPreview.SetSaveHandler(f)
 }
 
+// SetClipboardFunc wires the system-clipboard writer used by the text preview's
+// Copy button (copies the current text value to the system clipboard).
+func (p *Preview) SetClipboardFunc(f func(text string)) {
+	p.textPreview.SetClipboardHandler(f)
+}
+
 // SetKey set key input text
 func (p *Preview) SetKey(text string) {
 	if len(text) > 0 {
@@ -312,9 +318,36 @@ func (p *Preview) IsTableShown() bool {
 	return false
 }
 
+// IsTextShown reports whether the text preview is the active right-pane view.
+func (p *Preview) IsTextShown() bool {
+	for i := 0; i < p.showFlex.GetItemCount(); i++ {
+		if p.showFlex.GetItem(i) == p.textPreview {
+			return true
+		}
+	}
+	return false
+}
+
+// TextPrimitive returns the focusable editor primitive of the text preview.
+func (p *Preview) TextPrimitive() tview.Primitive {
+	return p.textPreview.TextArea()
+}
+
 // SetTableFocusFunc injects the focus setter used during inline editing.
 func (p *Preview) SetTableFocusFunc(f func(prim tview.Primitive)) {
 	p.tablePreview.SetFocusFunc(f)
+}
+
+// SetTextFocusFunc injects the focus setter used when the text preview enters
+// edit mode via the Edit button (so focus lands on the editor).
+func (p *Preview) SetTextFocusFunc(f func(prim tview.Primitive)) {
+	p.textPreview.SetFocusFunc(f)
+}
+
+// IsTextEditing reports whether the text preview is currently in edit mode
+// (textarea writable). Used to decide whether Left should leave for the tree.
+func (p *Preview) IsTextEditing() bool {
+	return p.textPreview.IsEditing()
 }
 
 func (p *Preview) ShowText(text string, showSave bool) {

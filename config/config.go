@@ -125,6 +125,8 @@ func kindColor(kind string) string {
 		return "#8bc99a" // light green
 	case "mysql":
 		return "#90caf9" // light blue
+	case "zookeeper":
+		return "#c9a0dc" // light purple
 	default: // redis
 		return "#f6b8b1" // lighter red
 	}

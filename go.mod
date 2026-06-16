@@ -5,8 +5,9 @@ go 1.25.0
 require (
 	github.com/gdamore/tcell/v2 v2.13.10
 	github.com/go-sql-driver/mysql v1.10.0
+	github.com/go-zookeeper/zk v1.0.4
 	github.com/rivo/tview v0.42.0
-	go.mongodb.org/mongo-driver/v2 v2.6.0
+	go.mongodb.org/mongo-driver/v2 v2.6.1
 )
 
 require (

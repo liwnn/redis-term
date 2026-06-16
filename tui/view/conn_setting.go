@@ -21,7 +21,7 @@ type Setting struct {
 }
 
 // connKinds lists supported backends in dropdown order.
-var connKinds = []string{"redis", "mongo", "mysql"}
+var connKinds = []string{"redis", "mongo", "mysql", "zookeeper"}
 
 // mongoModes lists the mongo connection-entry modes in dropdown order.
 var mongoModes = []string{"form", "url"}
@@ -168,6 +168,8 @@ func (s *ConnSetting) build(kind string) {
 		form.AddInputField("Address:", s.address(), 44, nil, nil)
 		form.AddInputField("Username:", s.cur.User, 44, nil, nil)
 		form.AddPasswordField("Auth:", s.cur.Auth, 44, '*', nil)
+	case "zookeeper":
+		form.AddInputField("Address:", s.address(), 44, nil, nil)
 	default: // redis
 		form.AddInputField("Address:", s.address(), 44, nil, nil)
 		form.AddPasswordField("Auth:", s.cur.Auth, 44, '*', nil)
@@ -194,6 +196,8 @@ func defaultPort(kind string) string {
 		return "27017"
 	case "mysql":
 		return "3306"
+	case "zookeeper":
+		return "2181"
 	default: // redis
 		return "6379"
 	}

@@ -13,6 +13,7 @@ import (
 	"github.com/liwnn/redisterm/datasource/mongo"
 	"github.com/liwnn/redisterm/datasource/mysql"
 	"github.com/liwnn/redisterm/datasource/redisapi"
+	"github.com/liwnn/redisterm/datasource/zookeeper"
 	"github.com/liwnn/redisterm/tlog"
 	"github.com/liwnn/redisterm/tui/model"
 	"github.com/liwnn/redisterm/tui/view"
@@ -226,7 +227,7 @@ func (a *App) init() {
 					return nil
 				}
 			case 'h':
-				if focused == a.tree.Preview().TablePrimitive() && a.focusTreeFromPreview() {
+				if (focused == a.tree.Preview().TablePrimitive() || focused == a.tree.Preview().TextPrimitive()) && a.focusTreeFromPreview() {
 					return nil
 				}
 			}
@@ -264,6 +265,8 @@ func (a *App) Show(index int) {
 			t = a.newMongoTree(conf)
 		case "mysql":
 			t = a.newMySQLTree(conf)
+		case "zookeeper":
+			t = a.newZKTree(conf)
 		default:
 			t = a.newRedisTree(conf)
 		}
@@ -277,7 +280,7 @@ func (a *App) Show(index int) {
 	a.main.SetTree(a.tree.TreeView())
 	a.main.GetSearch().SetText("") // clear the filter when switching connections
 	a.main.SetPreview(a.tree.PreviewFlex())
-	a.main.SetPreviewOpBar(a.tree.Preview().OpBar()) // host this tree's op row in the top bar
+	a.main.SetPreviewOpBar(a.tree.Preview().OpBar())              // host this tree's op row in the top bar
 	a.main.SetCliVisible(conf.Kind == "" || conf.Kind == "redis") // redis-cli only for redis
 	a.main.GetCmd().SetPromt(conf.Name, a.tree.Index())
 	a.cfg.SaveLastSelected(index)
@@ -358,19 +361,23 @@ func (a *App) toggleFocus() bool {
 	tree := a.tree.TreeView()
 	hasQuery := preview.IsQueryShown()
 	hasTable := preview.IsTableShown()
-	if !hasQuery && !hasTable {
+	hasText := preview.IsTextShown()
+	if !hasQuery && !hasTable && !hasText {
 		return false
 	}
 	focused := a.main.GetFocus()
 	query := preview.QueryPrimitive()
 	table := preview.TablePrimitive()
+	text := preview.TextPrimitive()
 
 	switch focused {
 	case tree:
 		if hasQuery {
 			a.main.SetFocus(query)
-		} else {
+		} else if hasTable {
 			a.main.SetFocus(table)
+		} else {
+			a.main.SetFocus(text)
 		}
 		return true
 	case query:
@@ -381,6 +388,9 @@ func (a *App) toggleFocus() bool {
 		}
 		return true
 	case table:
+		a.main.SetFocus(tree)
+		return true
+	case text:
 		a.main.SetFocus(tree)
 		return true
 	}
@@ -407,6 +417,10 @@ func (a *App) focusPreviewFromTree() bool {
 		a.main.SetFocus(preview.TablePrimitive())
 		return true
 	}
+	if preview.IsTextShown() {
+		a.main.SetFocus(preview.TextPrimitive())
+		return true
+	}
 	return false
 }
 
@@ -429,6 +443,12 @@ func (a *App) focusTreeFromPreview() bool {
 		// in the table, Left only leaves when on the first data column;
 		// otherwise it moves the selection one column left.
 		if !preview.TableAtLeftEdge() {
+			return false
+		}
+	case preview.TextPrimitive():
+		// in the text box, Left leaves for the tree only in read-only mode; while
+		// editing it must reach the textarea so the cursor can move.
+		if preview.IsTextEditing() {
 			return false
 		}
 	case preview.QueryPrimitive():
@@ -528,6 +548,12 @@ func probeConn(conf redisapi.RedisConfig) error {
 			return err
 		}
 		src.Close()
+	case "zookeeper":
+		src := zookeeper.NewZKSource(conf.Host, conf.Port)
+		if err := src.Open(); err != nil {
+			return err
+		}
+		src.Close()
 	default: // redis
 		data := model.NewData(fmt.Sprintf("%v:%v", conf.Host, conf.Port), conf.Auth)
 		if err := data.Connect(); err != nil {
@@ -550,6 +576,8 @@ func (a *App) newRedisTree(conf redisapi.RedisConfig) treeController {
 	t.ShowModalOK = a.main.ShowModalOK
 	t.ShowModal = a.main.ShowModal
 	preview.SetTableFocusFunc(a.focus)
+	preview.SetTextFocusFunc(a.focus)
+	preview.SetClipboardFunc(a.main.Clipboard)
 	t.SetData(address, model.NewData(address, conf.Auth))
 	return t
 }
@@ -564,10 +592,25 @@ func (a *App) newMySQLTree(conf redisapi.RedisConfig) treeController {
 	return a.newDSTree(conf.Name, mysql.NewMySQLSource(conf.Host, conf.Port, conf.User, conf.Auth))
 }
 
+// newZKTree builds the zookeeper-backed tree. Znode paths nest into a folder
+// tree split on "/", mirroring the redis key tree.
+func (a *App) newZKTree(conf redisapi.RedisConfig) treeController {
+	t := NewDSTree(conf.Name, zookeeper.NewZKSource(conf.Host, conf.Port))
+	t.SetNested("/", "znode", "znode")
+	t.preview.SetTableFocusFunc(a.focus)
+	t.preview.SetTextFocusFunc(a.focus)
+	t.preview.SetClipboardFunc(a.main.Clipboard)
+	t.ShowModal = a.main.ShowModal
+	t.ShowModalOK = a.main.ShowModalOK
+	return t
+}
+
 // newDSTree wraps a datasource in a DSTree and wires the shared UI callbacks.
 func (a *App) newDSTree(name string, src datasource.Datasource) treeController {
 	t := NewDSTree(name, src)
 	t.preview.SetTableFocusFunc(a.focus)
+	t.preview.SetTextFocusFunc(a.focus)
+	t.preview.SetClipboardFunc(a.main.Clipboard)
 	t.ShowModal = a.main.ShowModal
 	t.ShowModalOK = a.main.ShowModalOK
 	return t

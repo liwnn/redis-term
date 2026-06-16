@@ -17,6 +17,7 @@ import (
 	"github.com/liwnn/redisterm/datasource/mongo"
 	"github.com/liwnn/redisterm/datasource/mysql"
 	"github.com/liwnn/redisterm/datasource/redisapi"
+	"github.com/liwnn/redisterm/datasource/zookeeper"
 )
 
 //go:embed index.html
@@ -78,6 +79,8 @@ func (s *Server) source(index int) (datasource.Datasource, error) {
 		ds = mongo.NewMongoSource(conf.MongoURI())
 	case "mysql":
 		ds = mysql.NewMySQLSource(conf.Host, conf.Port, conf.User, conf.Auth)
+	case "zookeeper":
+		ds = zookeeper.NewZKSource(conf.Host, conf.Port)
 	default:
 		address := fmt.Sprintf("%v:%v", conf.Host, conf.Port)
 		ds = datasource.NewRedisSource(address, conf.Auth)
@@ -250,6 +253,8 @@ func (s *Server) handleConnTest(w http.ResponseWriter, r *http.Request) {
 		ds = mongo.NewMongoSource(conf.MongoURI())
 	case "mysql":
 		ds = mysql.NewMySQLSource(conf.Host, conf.Port, conf.User, conf.Auth)
+	case "zookeeper":
+		ds = zookeeper.NewZKSource(conf.Host, conf.Port)
 	default:
 		ds = datasource.NewRedisSource(fmt.Sprintf("%v:%v", conf.Host, conf.Port), conf.Auth)
 	}

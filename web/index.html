@@ -22,7 +22,10 @@
   #conn .opt.sel { background: #094771; }
   header .title { font-weight: bold; color: rgb(163, 72, 72); margin-right: 2px; }
   main { flex: 1; display: flex; min-height: 0; }
-  #sidebar { width: 300px; border-right: 1px solid #333; display: flex; flex-direction: column; min-height: 0; }
+  #sidebar { width: 300px; flex: 0 0 auto; border-right: 1px solid #333; display: flex; flex-direction: column; min-height: 0; }
+  #splitter { flex: 0 0 5px; cursor: col-resize; background: transparent; margin-left: -3px; z-index: 5; }
+  #splitter:hover, #splitter.dragging { background: #094771; }
+  body.col-resizing { cursor: col-resize; user-select: none; }
   #search { padding: 6px; border-bottom: 1px solid #333; }
   #search input { width: 100%; background: #1e1e1e; color: #ddd; border: 1px solid #444; padding: 5px; border-radius: 3px; font: inherit; }
   #keys { flex: 1; overflow: auto; padding: 2px 0; }
@@ -89,10 +92,10 @@
     <div class="modal-title" id="connModalTitle">Add connection</div>
     <div class="frow"><label>Name</label><input id="f_name"></div>
     <div class="frow"><label>Kind</label>
-      <select id="f_kind"><option value="redis">redis</option><option value="mongo">mongo</option><option value="mysql">mysql</option></select>
+      <select id="f_kind"><option value="redis">redis</option><option value="mongo">mongo</option><option value="mysql">mysql</option><option value="zookeeper">zookeeper</option></select>
     </div>
-    <div class="frow" data-show="redis,mysql,mongo-form"><label>Host</label><input id="f_host" placeholder="127.0.0.1"></div>
-    <div class="frow" data-show="redis,mysql,mongo-form"><label>Port</label><input id="f_port" placeholder="6379"></div>
+    <div class="frow" data-show="redis,mysql,mongo-form,zookeeper"><label>Host</label><input id="f_host" placeholder="127.0.0.1"></div>
+    <div class="frow" data-show="redis,mysql,mongo-form,zookeeper"><label>Port</label><input id="f_port" placeholder="6379"></div>
     <div class="frow" data-show="mysql,mongo-form"><label>User</label><input id="f_user"></div>
     <div class="frow" data-show="redis,mysql,mongo-form"><label>Auth</label><input id="f_auth" type="password"></div>
     <div class="frow" data-show="mongo-form"><label>DB</label><input id="f_db"></div>
@@ -113,6 +116,7 @@
     <div id="search"><input id="match" placeholder="search keys… (type to filter, or glob user:*)"></div>
     <div id="keys"><div class="empty">loading…</div></div>
   </div>
+  <div id="splitter"></div>
   <div id="content">
     <div class="meta" id="meta" style="display:none"><span class="badge" id="vtype"></span><span id="vkey"></span></div>
     <div id="value"><div class="empty">select a key</div></div>
@@ -144,14 +148,25 @@ function connKind() {
 // query bar and drop buttons (mongo collections / mysql tables), vs redis keys.
 function isRelational() { return connKind() !== 'redis'; }
 
+// hasQueryBar reports whether the content pane shows an editable query/filter bar.
+// Only the relational backends (mysql SELECT / mongo find) take a query; zookeeper
+// lists znodes as flat paths with no query, so its bar is suppressed.
+function hasQueryBar() { return connKind() === 'mysql' || connKind() === 'mongo'; }
+
 // entryNoun / containerNoun give backend-appropriate labels for confirm dialogs.
-function entryNoun() { return connKind() === 'mysql' ? 'table' : 'collection'; }
-function containerNoun() { return 'database'; }
+function entryNoun() {
+  switch (connKind()) {
+    case 'mysql': return 'table';
+    case 'zookeeper': return 'znode';
+    default: return 'collection';
+  }
+}
+function containerNoun() { return connKind() === 'zookeeper' ? 'znode' : 'database'; }
 
 // kindColor tints a connection's dropdown entry by backend kind so
 // redis/mongo/mysql are distinguishable by color (matches the TUI).
 function kindColor(kind) {
-  return {mongo: '#8bc99a', mysql: '#90caf9'}[kind] || '#f6b8b1'; // default: light red (redis)
+  return {mongo: '#8bc99a', mysql: '#90caf9', zookeeper: '#c9a0dc'}[kind] || '#f6b8b1'; // default: light red (redis)
 }
 
 // connSel is a tiny compatibility shim over the custom dropdown so the rest of
@@ -218,6 +233,32 @@ function buildTree(keys) {
   return root;
 }
 
+// buildZKTree nests znode paths (split on '/') under a container root path.
+// Unlike redis keys, every node is a real znode with its own data, so the
+// renderer makes folders selectable too. rootPath is the container's own path
+// (e.g. "/app"); only its descendants are nested below it.
+function buildZKTree(paths, rootPath) {
+  const root = { children: new Map(), count: 0 };
+  const prefix = rootPath + '/';
+  for (const p of paths) {
+    if (!p.startsWith(prefix)) continue; // skip the container root and unrelated paths
+    const parts = p.slice(prefix.length).split('/');
+    let node = root, full = rootPath;
+    for (let i = 0; i < parts.length; i++) {
+      full = full + '/' + parts[i];
+      const leaf = i === parts.length - 1;
+      let child = node.children.get(parts[i]);
+      if (!child) {
+        child = { name: parts[i], key: full, leaf, children: new Map(), count: 0 };
+        node.children.set(parts[i], child);
+      }
+      child.count++;
+      node = child;
+    }
+  }
+  return root;
+}
+
 // makeRow builds a single tree row with a twistie and label.
 function makeRow(depth, twistie, label, isFolder, count) {
   const row = document.createElement('div');
@@ -240,24 +281,31 @@ function makeRow(depth, twistie, label, isFolder, count) {
   return { row, tw };
 }
 
-// renderEntryNode renders the ':'-split entry tree under a container, depth >= 2.
-function renderEntryNode(node, depth, container) {
+// renderEntryNode renders the split-path entry tree under a container, depth >= 2.
+// Folders (redis groupers and zookeeper parent znodes alike) only expand/collapse
+// on click; only leaf nodes load content into the table on the right. When
+// collapsed is true, sub-folders start closed so expanding a container reveals
+// just its direct children (zookeeper); redis keeps its folders open.
+function renderEntryNode(node, depth, container, collapsed) {
   const frag = document.createDocumentFragment();
   const names = [...node.children.keys()].sort();
   for (const name of names) {
     const n = node.children.get(name);
     const isFolder = n.children.size > 0;
-    const { row, tw } = makeRow(depth, isFolder ? '▾' : '·', name, isFolder, isFolder ? n.count : undefined);
+    const closed = isFolder && collapsed;
+    const { row, tw } = makeRow(depth, isFolder ? (closed ? '▸' : '▾') : '·', name, isFolder, isFolder ? n.count : undefined);
     row.title = n.key;
     if (isFolder) {
       const kids = document.createElement('div');
-      kids.className = 'children';
-      kids.appendChild(renderEntryNode(n, depth + 1, container));
-      row.onclick = e => {
-        e.stopPropagation();
+      kids.className = collapsed ? 'children collapsed' : 'children';
+      kids.appendChild(renderEntryNode(n, depth + 1, container, collapsed));
+      const toggle = () => {
         kids.classList.toggle('collapsed');
         tw.textContent = kids.classList.contains('collapsed') ? '▸' : '▾';
       };
+      // A folder znode click only expands/collapses; its data is not shown on the
+      // right. Only leaf znodes load content into the table.
+      row.onclick = e => { e.stopPropagation(); toggle(); };
       frag.appendChild(row);
       frag.appendChild(kids);
     } else {
@@ -331,7 +379,11 @@ async function loadEntries(container, box, tw, quiet) {
     box.innerHTML = '';
     if (entries.error) { box.innerHTML = `<div class="empty" style="padding:4px 10px">${entries.error}</div>`; return; }
     if (!entries.length) { box.innerHTML = '<div class="empty" style="padding:4px 10px">empty</div>'; return; }
-    if (isRelational()) {
+    if (connKind() === 'zookeeper') {
+      // znode paths nest on '/'; the container is itself a znode, so its row
+      // loads the container's data and its descendants nest beneath it.
+      box.appendChild(renderEntryNode(buildZKTree(entries, '/' + container), 2, container, true));
+    } else if (isRelational()) {
       box.appendChild(renderFlatEntries(entries, container));
     } else {
       box.appendChild(renderEntryNode(buildTree(entries), 2, container));
@@ -373,12 +425,12 @@ async function loadKeys() {
       kids.className = 'children collapsed';
       kids.dataset.container = container; // lets live search re-filter this group
       let loaded = false;
-      row.onclick = e => {
-        e.stopPropagation();
+      const toggleKids = () => {
         const open = kids.classList.toggle('collapsed') === false;
         tw.textContent = open ? '▾' : '▸';
         if (open && !loaded) { loaded = true; loadEntries(container, kids, tw); }
       };
+      row.onclick = e => { e.stopPropagation(); toggleKids(); };
       if (isRelational()) {
         const del = document.createElement('span');
         del.textContent = '×';
@@ -409,6 +461,9 @@ function renderContent(c) {
   pending = new Map();
   pendingCtx = null;
   if (c.kind === 'text') {
+    // zookeeper znode data is editable multi-line text with a Save button; other
+    // backends' text stays read-only.
+    if (connKind() === 'zookeeper') { renderZNodeText(c, box); return; }
     box.innerHTML = '<pre style="padding-top:12px"></pre>';
     box.firstChild.textContent = c.text ?? '(nil)';
     return;
@@ -429,7 +484,7 @@ function renderContent(c) {
   // statement, currentQuery holds their exact input (newlines and all), so keep
   // it rather than overwrite with the backend's normalized single line.
   let qbar = null;
-  if (isRelational()) {
+  if (hasQueryBar()) {
     if (!currentQuery) currentQuery = c.query || '';
     qbar = buildQueryBar();
     box.appendChild(qbar);
@@ -477,6 +532,43 @@ function renderContent(c) {
     setQH();
     new ResizeObserver(setQH).observe(qbar);
   }
+}
+
+// renderZNodeText shows a zookeeper znode's data in an editable multi-line
+// textarea with a Save button that writes the full new value back via /api/update.
+function renderZNodeText(c, box) {
+  box.innerHTML = '';
+  box.style.setProperty('--qh', '0px');
+  const ta = document.createElement('textarea');
+  ta.value = c.text ?? '';
+  ta.spellcheck = false;
+  ta.style.cssText = 'width:100%; box-sizing:border-box; min-height:240px; margin-top:10px; resize:vertical; '
+    + 'background:#1e1e1e; color:#ddd; border:1px solid #3a3d41; border-radius:3px; padding:8px; '
+    + 'font:13px/1.5 monospace;';
+  const bar = document.createElement('div');
+  bar.style.cssText = 'display:flex; gap:8px; align-items:center; padding:8px 0;';
+  const save = document.createElement('button');
+  save.textContent = 'Save';
+  save.style.cssText = 'background:#0e639c; color:#fff; border:none; padding:4px 14px; border-radius:3px; cursor:pointer; font:inherit;';
+  const status = document.createElement('span');
+  status.style.cssText = 'color:#8bc99a;';
+  const container = currentContainer, entry = c.entry;
+  save.onclick = async () => {
+    status.style.color = '#8bc99a'; status.textContent = '';
+    const r = await fetch(`/api/update?conn=${encodeURIComponent(connSel.value)}`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ container, entry, columns: ['value'], row: 0, column: 0,
+        oldRow: [c.text ?? ''], value: ta.value, oldType: '' })
+    });
+    const j = await r.json();
+    if (j.error) { status.style.color = '#d33'; status.textContent = 'Save failed: ' + j.error; return; }
+    c.text = ta.value; // update baseline so a later save sends the right oldRow
+    status.textContent = 'Saved';
+  };
+  bar.appendChild(save);
+  bar.appendChild(status);
+  box.appendChild(ta);
+  box.appendChild(bar);
 }
 
 // fmtStreamId renders a stream entry ID "<ms>-<seq>" as a human time over the
@@ -583,6 +675,40 @@ function addColResizer(th) {
   };
   th.appendChild(grip);
 }
+
+// initSidebarResize wires the splitter between the sidebar and content so the
+// user can drag it to resize the key tree, mirroring the TUI. The chosen width
+// is clamped to keep both panels usable and persisted across reloads.
+function initSidebarResize() {
+  const sp = $('splitter'), sb = $('sidebar');
+  if (!sp || !sb) return;
+  const MIN_LEFT = 140, MIN_RIGHT = 240;
+  const saved = parseInt(localStorage.getItem('sidebarWidth') || '', 10);
+  if (saved > 0) sb.style.width = saved + 'px';
+  sp.addEventListener('mousedown', e => {
+    e.preventDefault();
+    const main = sb.parentElement;
+    const startX = e.pageX, startW = sb.offsetWidth;
+    sp.classList.add('dragging');
+    document.body.classList.add('col-resizing');
+    const onMove = ev => {
+      const maxLeft = main.clientWidth - MIN_RIGHT;
+      let w = startW + ev.pageX - startX;
+      w = Math.max(MIN_LEFT, Math.min(w, maxLeft));
+      sb.style.width = w + 'px';
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      sp.classList.remove('dragging');
+      document.body.classList.remove('col-resizing');
+      localStorage.setItem('sidebarWidth', sb.offsetWidth);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+initSidebarResize();
 
 // buildQueryBar renders the single query box shown above the table for
 // mongo/mysql. It replaces the old bottom command console: a table-shaped

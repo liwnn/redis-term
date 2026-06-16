@@ -12,9 +12,15 @@ import (
 type MainView struct {
 	*tview.Application
 	pages        *tview.Pages
+	body         *tview.Flex
 	leftFlexBox  *tview.Flex
 	rightFlexBox *tview.Flex
 	modal        *tview.Modal
+
+	// leftWidth, when > 0, pins the tree panel to a fixed column width set by
+	// dragging the divider; 0 keeps the default 1:4 proportional split.
+	leftWidth   int
+	dragDivider bool // a divider drag is in progress
 
 	bottomPanel tview.Primitive
 	console     *tview.TextView
@@ -29,6 +35,8 @@ type MainView struct {
 
 	bottomTabs  *tview.TextView // the CONSOLE / redis-cli tab strip
 	bottomPages *tview.Pages    // the panel pages switched by the tab strip
+
+	screen tcell.Screen // live tcell screen, captured on first draw, for clipboard
 }
 
 // NewMainView new
@@ -80,6 +88,7 @@ func (m *MainView) init() {
 		AddItem(m.leftFlexBox, 0, 1, true).
 		AddItem(m.rightFlexBox, 0, 4, false)
 	body.SetBackgroundColor(ThemePanelBG)
+	m.body = body
 	mainFlexBox := tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(m.buildOpBar(), 1, 0, false).
 		AddItem(body, 0, 1, true)
@@ -94,6 +103,70 @@ func (m *MainView) init() {
 	m.pages.AddPage("modal", m.modal, true, false) // 置顶:测试结果等弹窗要盖在设置表单之上
 
 	m.bottomPanel = m.createBottom()
+	m.installDividerDrag()
+}
+
+// dividerGrab is how many columns around the tree's right border count as a grab
+// zone for starting a drag.
+const dividerGrab = 1
+
+// minLeftWidth / minRightWidth keep both panels usable while dragging the divider.
+const (
+	minLeftWidth  = 14
+	minRightWidth = 24
+)
+
+// installDividerDrag wires a mouse capture that lets the user drag the border
+// between the tree panel and the preview panel to resize the tree. A left-press
+// within a column of the tree's right edge starts a drag; subsequent moves pin
+// the tree to a fixed width; release ends it.
+func (m *MainView) installDividerDrag() {
+	m.SetMouseCapture(func(event *tcell.EventMouse, action tview.MouseAction) (*tcell.EventMouse, tview.MouseAction) {
+		if event == nil {
+			return event, action
+		}
+		x, y := event.Position()
+		switch action {
+		case tview.MouseLeftDown:
+			lx, ly, lw, lh := m.leftFlexBox.GetRect()
+			edge := lx + lw - 1
+			if x >= edge-dividerGrab && x <= edge+dividerGrab && y >= ly && y < ly+lh {
+				// Arm the drag but don't resize yet: a plain click on the border
+				// shouldn't jump the width. The move handler resizes as the mouse
+				// is dragged.
+				m.dragDivider = true
+				return nil, action // consume: don't let the tree handle it
+			}
+		case tview.MouseMove:
+			if m.dragDivider {
+				bx, _, bw, _ := m.body.GetRect()
+				m.setLeftWidth(x-bx+1, bw)
+				return nil, action
+			}
+		case tview.MouseLeftUp:
+			if m.dragDivider {
+				m.dragDivider = false
+				return nil, action
+			}
+		}
+		return event, action
+	})
+}
+
+// setLeftWidth pins the tree panel to width columns, clamped so neither panel
+// collapses. total is the full body width used for clamping the right side.
+func (m *MainView) setLeftWidth(width, total int) {
+	if total <= 0 {
+		return
+	}
+	if maxW := total - minRightWidth; width > maxW {
+		width = maxW
+	}
+	if width < minLeftWidth {
+		width = minLeftWidth
+	}
+	m.leftWidth = width
+	m.body.ResizeItem(m.leftFlexBox, width, 0)
 }
 
 // hRule returns a one-row box that draws a thin horizontal line in the dim
@@ -170,7 +243,21 @@ func (m *MainView) ShowModalOK(text string) {
 
 // Run run
 func (m *MainView) Run() error {
+	// Capture the live tcell screen so Clipboard() can post to the system
+	// clipboard (OSC52). The screen isn't available until the app starts drawing.
+	m.SetAfterDrawFunc(func(screen tcell.Screen) {
+		m.screen = screen
+	})
 	return m.SetRoot(m.pages, true).EnableMouse(true).Run()
+}
+
+// Clipboard posts text to the system clipboard via the tcell screen (OSC52).
+// No-op until the screen is available (first draw) or if text is empty.
+func (m *MainView) Clipboard(text string) {
+	if m.screen == nil || text == "" {
+		return
+	}
+	m.screen.SetClipboard([]byte(text))
 }
 
 // SetGlobalInputCapture installs an application-wide key handler.
@@ -212,13 +299,25 @@ const opBarLeftWidth = opBarDropWidth + 2 + 3 + 1 + 3 + 1 + 3 + 3 // drop + gaps
 type opBar struct {
 	*tview.Flex
 	left *tview.Flex
+
+	// treeWidth reports the current tree-panel width so the left segment can track
+	// it. It returns 0 when the panel uses the default proportional split, in
+	// which case the op bar falls back to width/5.
+	treeWidth func() int
 }
 
 func (b *opBar) Draw(screen tcell.Screen) {
 	_, _, width, _ := b.GetRect()
-	// align with body's tree panel (proportion 1 of 1:4), but never below the
-	// width the dropdown+buttons need.
-	leftW := max(width/5, opBarLeftWidth)
+	// Align the left segment with the body's tree panel: use the dragged width
+	// when set, else the default 1:4 proportion. Never shrink below the width the
+	// dropdown+buttons need.
+	target := width / 5
+	if b.treeWidth != nil {
+		if w := b.treeWidth(); w > 0 {
+			target = w
+		}
+	}
+	leftW := max(target, opBarLeftWidth)
 	b.Flex.ResizeItem(b.left, leftW, 0)
 	b.Flex.Draw(screen)
 }
@@ -247,7 +346,7 @@ func (m *MainView) buildOpBar() tview.Primitive {
 	flex.AddItem(left, opBarLeftWidth, 0, false) // width is re-set each Draw
 	flex.AddItem(host, 0, 1, false)              // flexible: the preview op row
 	m.opBarHost = host
-	return &opBar{Flex: flex, left: left}
+	return &opBar{Flex: flex, left: left, treeWidth: func() int { return m.leftWidth }}
 }
 
 // SetPreviewOpBar mounts a preview's op row into the top bar's host slot,
