@@ -44,6 +44,14 @@ type Edit struct {
 	OldType string // original cell type from CellTypes; guides mongo coercion, ignored by redis
 }
 
+// RowRef identifies one row to delete by its original cell values and per-cell
+// types (parallel to the columns passed to DeleteRows). Types guides mongo _id
+// coercion; nil/empty => treat all cells as strings.
+type RowRef struct {
+	Row   []string
+	Types []string
+}
+
 // Datasource is a tree-shaped backend: server > container > entry > content.
 // Redis maps container=db, entry=key; Mongo maps container=database,
 // entry=collection. Implementations are not required to be goroutine-safe;
@@ -60,6 +68,10 @@ type Datasource interface {
 	Content(container, entry string, page Page) (Content, error)
 	// Update writes a single table cell change back to the backend.
 	Update(container, entry string, e Edit) error
+	// DeleteRows removes the given rows from an entry (mysql table rows / mongo
+	// documents), located by primary key / _id. Backends without row-level
+	// deletion return an error.
+	DeleteRows(container, entry string, columns []string, rows []RowRef) error
 	// DropEntry removes an entry (redis key / mongo collection) from a container.
 	DropEntry(container, entry string) error
 	// DropContainer removes a container (redis flushdb / mongo drop database).

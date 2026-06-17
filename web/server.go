@@ -396,6 +396,46 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]bool{"ok": true})
 }
 
+// handleDeleteRows removes the selected table rows (mysql) / documents (mongo),
+// located by primary key / _id.
+func (s *Server) handleDeleteRows(w http.ResponseWriter, r *http.Request) {
+	ds, err := s.source(intParam(r, "conn", 0))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	var body struct {
+		Container string   `json:"container"`
+		Entry     string   `json:"entry"`
+		Columns   []string `json:"columns"`
+		Rows      []struct {
+			OldRow      []string `json:"oldRow"`
+			OldRowTypes []string `json:"oldRowTypes"`
+		} `json:"rows"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, err)
+		return
+	}
+	if body.Entry == "" {
+		writeErr(w, fmt.Errorf("missing entry"))
+		return
+	}
+	if len(body.Rows) == 0 {
+		writeErr(w, fmt.Errorf("no rows selected"))
+		return
+	}
+	refs := make([]datasource.RowRef, 0, len(body.Rows))
+	for _, row := range body.Rows {
+		refs = append(refs, datasource.RowRef{Row: row.OldRow, Types: row.OldRowTypes})
+	}
+	if err := ds.DeleteRows(body.Container, body.Entry, body.Columns, refs); err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
 // handleDrop removes an entry (redis key / mongo collection) from a container.
 func (s *Server) handleDrop(w http.ResponseWriter, r *http.Request) {
 	ds, err := s.source(intParam(r, "conn", 0))
@@ -524,6 +564,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/entries", s.handleEntries)
 	mux.HandleFunc("/api/content", s.handleContent)
 	mux.HandleFunc("/api/update", s.handleUpdate)
+	mux.HandleFunc("/api/deleterows", s.handleDeleteRows)
 	mux.HandleFunc("/api/drop", s.handleDrop)
 	mux.HandleFunc("/api/dropdb", s.handleDropDB)
 	mux.HandleFunc("/api/cmd", s.handleCmd)

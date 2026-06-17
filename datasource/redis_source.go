@@ -235,6 +235,11 @@ func (s *RedisSource) Update(container, entry string, e Edit) error {
 	}
 }
 
+// DeleteRows is not supported for redis (its UI uses a different write path).
+func (s *RedisSource) DeleteRows(container, entry string, columns []string, rows []RowRef) error {
+	return fmt.Errorf("row deletion not supported")
+}
+
 // DropEntry deletes a key from the db named by container.
 func (s *RedisSource) DropEntry(container, entry string) error {
 	if err := s.selectDB(container); err != nil {

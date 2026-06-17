@@ -26,8 +26,10 @@
   #splitter { flex: 0 0 5px; cursor: col-resize; background: transparent; margin-left: -3px; z-index: 5; }
   #splitter:hover, #splitter.dragging { background: #094771; }
   body.col-resizing { cursor: col-resize; user-select: none; }
-  #search { padding: 6px; border-bottom: 1px solid #333; }
-  #search input { width: 100%; background: #1e1e1e; color: #ddd; border: 1px solid #444; padding: 5px; border-radius: 3px; font: inherit; }
+  #search { padding: 6px; border-bottom: 1px solid #333; display: flex; gap: 6px; align-items: stretch; }
+  #search input { flex: 1; min-width: 0; background: #1e1e1e; color: #ddd; border: 1px solid #444; padding: 5px; border-radius: 3px; font: inherit; }
+  #treeReload { background: #333; color: #ddd; border: 1px solid #444; border-radius: 3px; padding: 0 9px; cursor: pointer; font: inherit; flex: 0 0 auto; }
+  #treeReload:hover { background: #0e639c; border-color: #0e639c; color: #fff; }
   #keys { flex: 1; overflow: auto; padding: 2px 0; }
   .node { white-space: nowrap; cursor: pointer; user-select: none; line-height: 20px; }
   .node:hover { background: #2a2d2e; }
@@ -45,12 +47,19 @@
   table { border-collapse: separate; border-spacing: 0; width: auto; max-width: 100%; }
   td, th { border: 1px solid #333; border-left: none; padding: 4px 8px; text-align: left; vertical-align: top; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 600px; }
   td:first-child, th:first-child { border-left: 1px solid #333; }
-  /* sticky header: pinned below the query bar (whose height is --qh). With
-     border-collapse separate, sticky cells keep their borders while scrolling. */
-  th { background: #252526; position: sticky; top: var(--qh, 0px); z-index: 3; }
+  /* sticky header: pinned below the query bar (--qh) and the edit/delete toolbar
+     (--eh) so it stays visible while scrolling. With border-collapse separate,
+     sticky cells keep their borders while scrolling. */
+  th { background: #252526; position: sticky; top: calc(var(--qh, 0px) + var(--eh, 0px)); z-index: 3; }
   tr:not(:first-child) td { border-top: none; }
-  /* the sticky query bar pinned to the top of the scroll area */
-  .qbar { position: sticky; top: 0; z-index: 4; background: #1e1e1e; padding: 12px 0 8px; }
+  /* the sticky query bar pinned to the top of the scroll area. left:-12px (with
+     the matching -12px margins) bleeds it over #value's horizontal padding so no
+     row peeks through the side gutters during horizontal scroll. left:0 would let
+     sticky clamp the border box to 0 and re-expose the gutter. */
+  .qbar { position: sticky; top: 0; left: -12px; z-index: 4; background: #1e1e1e; margin: 0 -12px; padding: 12px 12px 2px; }
+  /* the edit/delete toolbar pinned right below the query bar so it never scrolls
+     out of view while there are staged edits or selected rows */
+  #editbar { position: sticky; top: var(--qh, 0px); left: -12px; z-index: 4; background: #1e1e1e; margin: 0 -12px; }
   th .rs { position: absolute; top: 0; right: 0; width: 6px; height: 100%; cursor: col-resize; user-select: none; }
   th .rs:hover { background: #0e639c; }
   #cmdbar { border-top: 1px solid #333; background: #252526; }
@@ -113,7 +122,7 @@
 </div>
 <main>
   <div id="sidebar">
-    <div id="search"><input id="match" placeholder="search keys… (type to filter, or glob user:*)"></div>
+    <div id="search"><input id="match" placeholder="search keys… (type to filter, or glob user:*)"><button id="treeReload" title="Reload data">⟳</button></div>
     <div id="keys"><div class="empty">loading…</div></div>
   </div>
   <div id="splitter"></div>
@@ -152,6 +161,10 @@ function isRelational() { return connKind() !== 'redis'; }
 // Only the relational backends (mysql SELECT / mongo find) take a query; zookeeper
 // lists znodes as flat paths with no query, so its bar is suppressed.
 function hasQueryBar() { return connKind() === 'mysql' || connKind() === 'mongo'; }
+
+// canDeleteRows reports whether the table supports per-row deletion (mysql table
+// rows located by primary key / mongo documents located by _id).
+function canDeleteRows() { return connKind() === 'mysql' || connKind() === 'mongo'; }
 
 // entryNoun / containerNoun give backend-appropriate labels for confirm dialogs.
 function entryNoun() {
@@ -289,14 +302,18 @@ function makeRow(depth, twistie, label, isFolder, count) {
 function renderEntryNode(node, depth, container, collapsed) {
   const frag = document.createDocumentFragment();
   const names = [...node.children.keys()].sort();
+  // Every zookeeper node is a real znode and can be deleted (recursively, with
+  // its subtree); redis groupers are virtual prefixes, so no drop button there.
+  const zk = connKind() === 'zookeeper';
   for (const name of names) {
     const n = node.children.get(name);
     const isFolder = n.children.size > 0;
     const closed = isFolder && collapsed;
     const { row, tw } = makeRow(depth, isFolder ? (closed ? '▸' : '▾') : '·', name, isFolder, isFolder ? n.count : undefined);
     row.title = n.key;
+    let kids = null;
     if (isFolder) {
-      const kids = document.createElement('div');
+      kids = document.createElement('div');
       kids.className = collapsed ? 'children collapsed' : 'children';
       kids.appendChild(renderEntryNode(n, depth + 1, container, collapsed));
       const toggle = () => {
@@ -306,14 +323,82 @@ function renderEntryNode(node, depth, container, collapsed) {
       // A folder znode click only expands/collapses; its data is not shown on the
       // right. Only leaf znodes load content into the table.
       row.onclick = e => { e.stopPropagation(); toggle(); };
-      frag.appendChild(row);
-      frag.appendChild(kids);
     } else {
       row.onclick = e => { e.stopPropagation(); loadContent(container, n.key, row, true); };
-      frag.appendChild(row);
     }
+    if (zk) {
+      // Every znode (folder or leaf) gets hover actions: reload its own subtree /
+      // value, and drop it (with its subtree). depth is captured so a folder
+      // reload can rebuild its children at the right indent.
+      row.style.position = 'relative';
+      row.appendChild(zkRowActions(container, n.key, row, kids, depth));
+    }
+    frag.appendChild(row);
+    if (kids) frag.appendChild(kids);
   }
   return frag;
+}
+
+// zkRowActions builds the hover action group (reload + drop) shown on a znode
+// row. kids is the row's nested children container (null for a leaf); depth is
+// the row's indent level, used to rebuild a folder's subtree.
+function zkRowActions(container, path, row, kids, depth) {
+  const group = document.createElement('span');
+  group.style.cssText = 'float:right; display:none;';
+  const reload = document.createElement('span');
+  reload.textContent = '⟳';
+  reload.title = 'Reload ' + entryNoun();
+  reload.style.cssText = 'color:#8ab4f8; font-weight:bold; padding:0 6px; cursor:pointer;';
+  reload.onclick = e => { e.stopPropagation(); reloadZNode(container, path, row, kids, depth); };
+  const del = document.createElement('span');
+  del.textContent = '×';
+  del.title = 'Drop ' + entryNoun();
+  del.style.cssText = 'color:#d33; font-weight:bold; padding:0 8px; cursor:pointer;';
+  del.onclick = e => { e.stopPropagation(); dropZNode(container, path, row, kids); };
+  group.appendChild(reload);
+  group.appendChild(del);
+  row.onmouseenter = () => { group.style.display = 'inline'; };
+  row.onmouseleave = () => { group.style.display = 'none'; };
+  return group;
+}
+
+// reloadZNode re-fetches the container's znode subtree and rebuilds this node's
+// part of it: a folder's children group is repopulated from the fresh paths; a
+// leaf's currently-shown value is re-loaded into the right pane. The folder's
+// expand/collapse state is preserved.
+async function reloadZNode(container, path, row, kids, depth) {
+  if (kids) {
+    const wasCollapsed = kids.classList.contains('collapsed');
+    try {
+      const match = $('match').value || '*';
+      const r = await fetch(`/api/entries?${params(container)}&match=${encodeURIComponent(match)}`);
+      const entries = await r.json();
+      if (entries.error) { alert('Reload failed: ' + entries.error); return; }
+      kids.innerHTML = '';
+      // Rebuild only the subtree rooted at this folder's path. Children start
+      // collapsed (matching initial nesting); restore this folder's own state.
+      kids.appendChild(renderEntryNode(buildZKTree(entries, path), depth + 1, container, true));
+      kids.classList.toggle('collapsed', wasCollapsed);
+    } catch (e) { alert('Reload failed: ' + e); }
+    return;
+  }
+  // Leaf: only refresh the pane if this node's value is what's shown.
+  if (activeKey === row) loadContent(container, path, row, true);
+}
+
+// dropZNode confirms and deletes a znode (and its entire subtree) by full path,
+// then removes its row — and any nested children group — from the tree.
+async function dropZNode(container, path, row, kids) {
+  if (!confirm(`Drop ${entryNoun()} ${path}? This removes it and all descendants and cannot be undone.`)) return;
+  const r = await fetch(`/api/drop?conn=${encodeURIComponent(connSel.value)}`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ container, entry: path })
+  });
+  const j = await r.json();
+  if (j.error) { alert('Drop failed: ' + j.error); return; }
+  row.remove();
+  if (kids) kids.remove();
+  if (activeKey === row) { $('value').innerHTML = '<div class="empty">select a key</div>'; $('meta').style.display = 'none'; }
 }
 
 // renderFlatEntries renders entries as flat leaves (mongo collections, no ':' split).
@@ -366,9 +451,25 @@ async function dropDatabase(container, row, kids) {
   $('meta').style.display = 'none';
 }
 
+// renderEntries paints a container's already-fetched entry list into box. When
+// expand is true (active search) nested zookeeper folders start open so deep
+// matches are visible instead of being hidden under collapsed parents.
+function renderEntries(container, box, entries, expand) {
+  box.innerHTML = '';
+  if (!entries.length) { box.innerHTML = '<div class="empty" style="padding:4px 10px">empty</div>'; return; }
+  if (connKind() === 'zookeeper') {
+    // znode paths nest on '/'; the container is itself a znode, so its row
+    // loads the container's data and its descendants nest beneath it.
+    box.appendChild(renderEntryNode(buildZKTree(entries, '/' + container), 2, container, !expand));
+  } else if (isRelational()) {
+    box.appendChild(renderFlatEntries(entries, container));
+  } else {
+    box.appendChild(renderEntryNode(buildTree(entries), 2, container));
+  }
+}
+
 // loadEntries fetches entries for a container and renders the entry tree.
-// Redis keys split on ':'; mongo collections render flat.
-async function loadEntries(container, box, tw, quiet) {
+async function loadEntries(container, box, tw, quiet, expand) {
   // quiet (live search re-filter) keeps the old list in place until the new one
   // arrives, so the tree doesn't flash a short "loading…" line and shift.
   if (!quiet) box.innerHTML = '<div class="empty" style="padding:4px 10px">loading…</div>';
@@ -376,18 +477,8 @@ async function loadEntries(container, box, tw, quiet) {
   try {
     const r = await fetch(`/api/entries?${params(container)}&match=${encodeURIComponent(match)}`);
     const entries = await r.json();
-    box.innerHTML = '';
     if (entries.error) { box.innerHTML = `<div class="empty" style="padding:4px 10px">${entries.error}</div>`; return; }
-    if (!entries.length) { box.innerHTML = '<div class="empty" style="padding:4px 10px">empty</div>'; return; }
-    if (connKind() === 'zookeeper') {
-      // znode paths nest on '/'; the container is itself a znode, so its row
-      // loads the container's data and its descendants nest beneath it.
-      box.appendChild(renderEntryNode(buildZKTree(entries, '/' + container), 2, container, true));
-    } else if (isRelational()) {
-      box.appendChild(renderFlatEntries(entries, container));
-    } else {
-      box.appendChild(renderEntryNode(buildTree(entries), 2, container));
-    }
+    renderEntries(container, box, entries, expand);
   } catch (e) { box.innerHTML = `<div class="empty" style="padding:4px 10px">${e}</div>`; }
 }
 
@@ -431,7 +522,28 @@ async function loadKeys() {
         if (open && !loaded) { loaded = true; loadEntries(container, kids, tw); }
       };
       row.onclick = e => { e.stopPropagation(); toggleKids(); };
-      if (isRelational()) {
+      if (connKind() === 'zookeeper') {
+        // A zookeeper container is itself a znode: reload re-fetches its subtree
+        // (only if already expanded/loaded); drop removes it and all descendants.
+        row.style.position = 'relative';
+        const group = document.createElement('span');
+        group.style.cssText = 'float:right; display:none;';
+        const reload = document.createElement('span');
+        reload.textContent = '⟳';
+        reload.title = 'Reload ' + entryNoun();
+        reload.style.cssText = 'color:#8ab4f8; font-weight:bold; padding:0 6px; cursor:pointer;';
+        reload.onclick = e => { e.stopPropagation(); if (loaded) loadEntries(container, kids, tw, true); };
+        const del = document.createElement('span');
+        del.textContent = '×';
+        del.title = 'Drop ' + entryNoun();
+        del.style.cssText = 'color:#d33; font-weight:bold; padding:0 8px; cursor:pointer;';
+        del.onclick = e => { e.stopPropagation(); dropZNode(container, '/' + container, row, kids); };
+        group.appendChild(reload);
+        group.appendChild(del);
+        row.onmouseenter = () => { group.style.display = 'inline'; };
+        row.onmouseleave = () => { group.style.display = 'none'; };
+        row.appendChild(group);
+      } else if (isRelational()) {
         const del = document.createElement('span');
         del.textContent = '×';
         del.title = 'Drop ' + containerNoun();
@@ -453,6 +565,12 @@ async function loadKeys() {
 let pending = new Map();
 let pendingCtx = null; // { container, entry, columns }
 
+// selectedRows holds the row indices ticked for deletion (mysql/mongo only),
+// alongside the rows/cellTypes captured when the table was rendered.
+let selectedRows = new Set();
+let deleteCtx = null; // { rows, cellTypes }
+let currentRowCount = 0; // rows shown in the active table, for the idle toolbar label
+
 function renderContent(c) {
   $('meta').style.display = 'flex';
   $('vtype').textContent = c.type;
@@ -460,6 +578,8 @@ function renderContent(c) {
   const box = $('value');
   pending = new Map();
   pendingCtx = null;
+  selectedRows = new Set();
+  deleteCtx = null;
   if (c.kind === 'text') {
     // zookeeper znode data is editable multi-line text with a Save button; other
     // backends' text stays read-only.
@@ -475,6 +595,9 @@ function renderContent(c) {
   const cellTypes = c.cellTypes || [];
   const readOnly = c.readOnly || [];
   pendingCtx = { container: currentContainer, entry: c.entry, columns: cols };
+  currentRowCount = rows.length;
+  const rowDelete = canDeleteRows();
+  if (rowDelete) deleteCtx = { rows, cellTypes };
 
   box.innerHTML = '';
   box.style.setProperty('--qh', '0px');
@@ -492,6 +615,23 @@ function renderContent(c) {
   box.appendChild(buildToolbar());
   const table = document.createElement('table');
   const head = document.createElement('tr');
+  let selectAll = null;
+  if (rowDelete) {
+    const th = document.createElement('th');
+    th.style.width = '1%';
+    selectAll = document.createElement('input');
+    selectAll.type = 'checkbox';
+    selectAll.title = 'Select all';
+    selectAll.onclick = () => {
+      table.querySelectorAll('tr > td:first-child input[type=checkbox]').forEach((cb, i) => {
+        cb.checked = selectAll.checked;
+        if (selectAll.checked) selectedRows.add(i); else selectedRows.delete(i);
+      });
+      updateToolbar();
+    };
+    th.appendChild(selectAll);
+    head.appendChild(th);
+  }
   // columns auto-size to content (table-layout:auto); the drag grip lets the
   // user pin an explicit width when they want to widen/narrow a column.
   ['#', ...cols].forEach((col, k) => {
@@ -503,6 +643,19 @@ function renderContent(c) {
   table.appendChild(head);
   rows.forEach((row, i) => {
     const tr = document.createElement('tr');
+    if (rowDelete) {
+      const selTd = document.createElement('td');
+      selTd.style.textAlign = 'center';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.onclick = () => {
+        if (cb.checked) selectedRows.add(i); else selectedRows.delete(i);
+        if (selectAll) selectAll.checked = selectedRows.size === rows.length;
+        updateToolbar();
+      };
+      selTd.appendChild(cb);
+      tr.appendChild(selTd);
+    }
     const idx = document.createElement('td');
     idx.textContent = i + 1;
     tr.appendChild(idx);
@@ -808,7 +961,15 @@ async function runQueryBox(raw) {
 function buildToolbar() {
   const bar = document.createElement('div');
   bar.id = 'editbar';
-  bar.style.cssText = 'display:none; gap:8px; align-items:center; padding:6px 0 10px;';
+  // min-height reserves a constant button-row height so toggling buttons on/off
+  // (e.g. Delete appearing on selection) never grows the bar and pushes the
+  // table down.
+  bar.style.cssText = 'display:none; gap:8px; align-items:center; padding:0 12px; box-sizing:border-box; min-height:26px;';
+  // Row-count label shown when the bar is otherwise empty (no edits, no ticks),
+  // so the reserved row isn't blank.
+  const info = document.createElement('span');
+  info.id = 'editinfo';
+  info.style.cssText = 'color:#888;';
   const count = document.createElement('span');
   count.id = 'editcount';
   count.style.cssText = 'background:#f5c518; color:#000; border-radius:10px; padding:1px 9px; font-weight:bold;';
@@ -820,19 +981,43 @@ function buildToolbar() {
   rollback.textContent = 'Rollback';
   rollback.style.cssText = 'background:#3a3d41; color:#ddd; border:none; padding:4px 12px; border-radius:3px; cursor:pointer; font:inherit;';
   rollback.onclick = () => loadContent(pendingCtx.container, pendingCtx.entry, activeKey);
+  const del = document.createElement('button');
+  del.id = 'editdelete';
+  del.style.cssText = 'display:none; background:#a1260d; color:#fff; border:none; padding:4px 12px; border-radius:3px; cursor:pointer; font:inherit;';
+  del.onclick = deleteSelectedRows;
+  bar.appendChild(info);
   bar.appendChild(count);
   bar.appendChild(commit);
   bar.appendChild(rollback);
+  bar.appendChild(del);
   return bar;
 }
 
-// updateToolbar shows or hides the commit bar based on pending count.
+// updateToolbar toggles the toolbar buttons based on pending edits and ticked
+// rows. The bar itself stays visible (its row is reserved) so the layout doesn't
+// jump; Commit/Rollback appear only with staged edits, Delete only with ticks.
 function updateToolbar() {
   const bar = $('editbar');
   if (!bar) return;
-  if (pending.size === 0) { bar.style.display = 'none'; return; }
+  const hasEdits = pending.size > 0;
+  const hasSel = selectedRows.size > 0;
   bar.style.display = 'flex';
   $('editcount').textContent = pending.size;
+  $('editcount').style.display = hasEdits ? '' : 'none';
+  bar.querySelector('button:nth-of-type(1)').style.display = hasEdits ? '' : 'none'; // Commit
+  bar.querySelector('button:nth-of-type(2)').style.display = hasEdits ? '' : 'none'; // Rollback
+  const del = $('editdelete');
+  del.style.display = hasSel ? '' : 'none';
+  del.textContent = `Delete selected (${selectedRows.size})`;
+  // When nothing is staged or ticked, fill the reserved row with the row count.
+  const info = $('editinfo');
+  if (info) {
+    const idle = !hasEdits && !hasSel;
+    info.style.display = idle ? '' : 'none';
+    info.textContent = `${currentRowCount} row${currentRowCount === 1 ? '' : 's'}`;
+  }
+  // Publish the toolbar's height so the sticky table header pins below it.
+  $('value').style.setProperty('--eh', bar.offsetHeight + 'px');
 }
 
 // editCell swaps a table cell into an input and stages (does not save) the change.
@@ -890,6 +1075,26 @@ async function commitPending() {
     const j = await r.json();
     if (j.error) { alert('Commit failed: ' + j.error); return; }
   }
+  loadContent(pendingCtx.container, pendingCtx.entry, activeKey);
+}
+
+// deleteSelectedRows POSTs the ticked rows to /api/deleterows, then refreshes.
+async function deleteSelectedRows() {
+  if (!pendingCtx || !deleteCtx || selectedRows.size === 0) return;
+  if (!confirm(`Delete ${selectedRows.size} selected row(s)? This cannot be undone.`)) return;
+  const rows = [...selectedRows].sort((a, b) => a - b).map(i => ({
+    oldRow: deleteCtx.rows[i],
+    oldRowTypes: deleteCtx.cellTypes[i] || [],
+  }));
+  const r = await fetch(`/api/deleterows?conn=${encodeURIComponent(connSel.value)}`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      container: pendingCtx.container, entry: pendingCtx.entry,
+      columns: pendingCtx.columns, rows,
+    })
+  });
+  const j = await r.json();
+  if (j.error) { alert('Delete failed: ' + j.error); return; }
   loadContent(pendingCtx.container, pendingCtx.entry, activeKey);
 }
 
@@ -1034,6 +1239,20 @@ $('connDel').onclick = async () => {
   await loadConns();
   await onConnChange();
 };
+// treeReload re-fetches the key tree from the backend, then re-loads the
+// currently-open entry's content if one is selected. Discards any staged
+// (uncommitted) cell edits, since the tree is rebuilt from scratch. If a search
+// term is active, the rebuilt tree is re-filtered so the view stays consistent.
+$('treeReload').onclick = async () => {
+  const container = currentContainer, entry = currentEntry;
+  await loadKeys();
+  if (($('match').value || '').trim()) await applySearch();
+  if (container && entry) {
+    // The previously-active row was destroyed by the rebuild; re-fetch its
+    // content into the pane (passed el=null, so no row highlight is restored).
+    loadContent(container, entry, null);
+  }
+};
 $('connCancelBtn').onclick = closeConnModal;
 $('connTestBtn').onclick = async () => {
   const b = connBodyFromForm();
@@ -1062,17 +1281,40 @@ $('connSaveBtn').onclick = async () => {
   await onConnChange();
 };
 
-// applySearch re-filters entries of currently-expanded containers using the
-// search box, WITHOUT rebuilding the container tree — so the user's expand /
-// collapse state is preserved while typing.
-function applySearch() {
-  document.querySelectorAll('#keys .children').forEach(kids => {
-    if (kids.classList.contains('collapsed')) return; // skip collapsed groups
+// applySearch filters the tree by the search box: containers with no matching
+// entry (and whose own name doesn't match) are hidden entirely; matching
+// containers are shown and auto-expanded so their hits are visible. An empty
+// term restores the full tree in its default collapsed state.
+async function applySearch() {
+  const term = ($('match').value || '').trim().toLowerCase();
+  if (!term) { await loadKeys(); return; }
+  const groups = document.querySelectorAll('#keys .children[data-container]');
+  for (const kids of groups) {
     const container = kids.dataset.container;
-    if (container === undefined) return;
-    const tw = kids.previousElementSibling.querySelector('.tw');
-    loadEntries(container, kids, tw, true);
-  });
+    const row = kids.previousElementSibling;
+    const tw = row.querySelector('.tw');
+    // Fetch this container's entries filtered by the term (server applies the
+    // glob/substring match); show the container only if it has hits or its own
+    // name matches.
+    let entries = [];
+    try {
+      const r = await fetch(`/api/entries?${params(container)}&match=${encodeURIComponent($('match').value)}`);
+      const j = await r.json();
+      if (!j.error && Array.isArray(j)) entries = j;
+    } catch (e) { /* leave entries empty on error */ }
+    const nameMatch = container.toLowerCase().includes(term);
+    if (entries.length === 0 && !nameMatch) {
+      row.style.display = 'none';
+      kids.style.display = 'none';
+      continue;
+    }
+    row.style.display = '';
+    kids.style.display = '';
+    kids.classList.remove('collapsed');
+    if (tw) tw.textContent = '▾';
+    // Render the entries we already fetched, expanded so nested hits show.
+    renderEntries(container, kids, entries, true);
+  }
 }
 
 // live search: re-filter as the user types, debounced so we don't refetch on

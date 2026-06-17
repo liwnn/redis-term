@@ -159,16 +159,48 @@ func (s *ZKSource) Update(_, entry string, e datasource.Edit) error {
 	return err
 }
 
-// DropEntry deletes a znode. ZooKeeper refuses to delete a node that still has
-// children; that error is surfaced as-is (no recursive delete).
-func (s *ZKSource) DropEntry(_, entry string) error {
-	return s.conn.Delete(entry, -1)
+// DeleteRows is not supported for zookeeper (znodes are edited as text, not rows).
+func (s *ZKSource) DeleteRows(_, _ string, _ []string, _ []datasource.RowRef) error {
+	return fmt.Errorf("row deletion not supported")
 }
 
-// DropContainer deletes a top-level znode. Like DropEntry it fails if the node
-// has children.
+// DropEntry deletes a znode and its entire subtree. ZooKeeper refuses to delete
+// a node that still has children, so children are removed depth-first before the
+// node itself.
+func (s *ZKSource) DropEntry(_, entry string) error {
+	return s.deleteRecursive(entry, 0)
+}
+
+// DropContainer deletes a top-level znode and its entire subtree.
 func (s *ZKSource) DropContainer(container string) error {
-	return s.conn.Delete("/"+container, -1)
+	return s.deleteRecursive("/"+container, 0)
+}
+
+// deleteRecursive removes path and all of its descendants, children first. The
+// depth bound mirrors walk so a pathological tree can't recurse without limit.
+func (s *ZKSource) deleteRecursive(path string, depth int) error {
+	if depth < maxWalkDepth {
+		children, _, err := s.conn.Children(path)
+		if err != nil {
+			if err == zk.ErrNoNode {
+				return nil // already gone
+			}
+			return err
+		}
+		for _, child := range children {
+			next := path + "/" + child
+			if path == "/" {
+				next = "/" + child
+			}
+			if err := s.deleteRecursive(next, depth+1); err != nil {
+				return err
+			}
+		}
+	}
+	if err := s.conn.Delete(path, -1); err != nil && err != zk.ErrNoNode {
+		return err
+	}
+	return nil
 }
 
 // Command runs a minimal read-only shell against the znode tree. Supported:

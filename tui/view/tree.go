@@ -27,6 +27,7 @@ func NewTree(rootName string) *Tree {
 	tree.SetBorder(true)
 	// tree.SetTitle("KEYS")
 	tree.SetBackgroundColor(ThemePanelBG)
+	focusBorder(tree.Box)
 
 	t := &Tree{
 		TreeView: tree,
@@ -58,9 +59,22 @@ func (t *Tree) Draw(screen tcell.Screen) {
 		return
 	}
 	// The root sits on the first inner row of the tree (top-aligned, no scroll
-	// offset since it's the first node). Draw one cell in from the right edge.
+	// offset since it's the first node). tview lets a long root name run to the
+	// right edge, so blank the last few cells to carve out clear space and draw
+	// the glyph flush-right.
+	blank := tcell.StyleDefault.Background(ThemePanelBG)
+	screen.SetContent(x+w-3, y, ' ', nil, blank)
+	screen.SetContent(x+w-1, y, ' ', nil, blank)
 	style := tcell.StyleDefault.Background(ThemePanelBG).Foreground(t.rootStatusColor)
 	screen.SetContent(x+w-2, y, t.rootStatus, nil, style)
+	// When the name is long enough to reach the carved-out area, it was truncated
+	// with no indicator — overwrite the cell just before the cleared gap with an
+	// ellipsis so it's clear the name is cut off.
+	nameWidth := len([]rune(t.GetRoot().GetText()))
+	if nameWidth >= w-3 {
+		nameStyle := tcell.StyleDefault.Background(ThemePanelBG).Foreground(tcell.ColorYellow)
+		screen.SetContent(x+w-4, y, '…', nil, nameStyle)
+	}
 }
 
 // AddNode add node

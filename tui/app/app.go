@@ -185,7 +185,7 @@ func (a *App) init() {
 			// when the tree already holds focus but no jump happened (e.g. the
 			// preview is a plain text view, not a table/query), swallow Right so
 			// it doesn't move the selection down (tview maps Right→down).
-			if a.tree != nil && a.main.GetFocus() == a.tree.TreeView() {
+			if a.treeFocused() {
 				return nil
 			}
 		}
@@ -196,7 +196,7 @@ func (a *App) init() {
 			// when the tree already holds focus, swallow Left so it doesn't move
 			// the selection up (tview maps Left→up); Left is reserved for the
 			// preview→tree jump only.
-			if a.tree != nil && a.main.GetFocus() == a.tree.TreeView() {
+			if a.treeFocused() {
 				return nil
 			}
 		}
@@ -223,7 +223,7 @@ func (a *App) init() {
 			focused := a.main.GetFocus()
 			switch event.Rune() {
 			case 'l':
-				if focused == a.tree.TreeView() && a.focusPreviewFromTree() {
+				if a.treeFocused() && a.focusPreviewFromTree() {
 					return nil
 				}
 			case 'h':
@@ -284,7 +284,13 @@ func (a *App) Show(index int) {
 	a.main.SetCliVisible(conf.Kind == "" || conf.Kind == "redis") // redis-cli only for redis
 	a.main.GetCmd().SetPromt(conf.Name, a.tree.Index())
 	a.cfg.SaveLastSelected(index)
-	a.main.SetFocus(a.tree.TreeView())
+	// Defer the focus to the tree: when Show runs from the connection dropdown's
+	// selected callback, tview restores focus to the dropdown AFTER the callback
+	// returns, which would override a synchronous SetFocus here and leave the
+	// arrow keys driving the dropdown instead of the tree. Queuing it runs the
+	// focus change after the dropdown settles.
+	tree := a.tree.TreeView()
+	go a.main.QueueUpdateDraw(func() { a.main.SetFocus(tree) })
 }
 
 // connectAsync opens t's backend connection off the UI goroutine, then expands
@@ -402,6 +408,15 @@ func (a *App) toggleFocus() bool {
 // The query box is reachable via Tab, not Right. It reports whether it acted; if
 // the tree isn't focused or there's no table target, it returns false so Right
 // keeps its normal meaning.
+// treeFocused reports whether the key tree currently holds focus. It uses
+// HasFocus() rather than comparing GetFocus() to the *view.Tree wrapper: a mouse
+// click on a node focuses the embedded *tview.TreeView, a different pointer than
+// the wrapper, so strict equality would wrongly report "not focused" and let
+// Left/Right leak through to the tree's own up/down navigation.
+func (a *App) treeFocused() bool {
+	return a.tree != nil && a.tree.TreeView().HasFocus()
+}
+
 func (a *App) focusPreviewFromTree() bool {
 	if a.tree == nil {
 		return false
@@ -410,15 +425,21 @@ func (a *App) focusPreviewFromTree() bool {
 	if preview == nil {
 		return false
 	}
-	if a.main.GetFocus() != a.tree.TreeView() {
+	if !a.treeFocused() {
 		return false
 	}
+	// Land on the table when shown (Show() makes an empty table non-selectable, so
+	// focusing it is safe), else the text view, else the query box.
 	if preview.IsTableShown() {
 		a.main.SetFocus(preview.TablePrimitive())
 		return true
 	}
 	if preview.IsTextShown() {
 		a.main.SetFocus(preview.TextPrimitive())
+		return true
+	}
+	if preview.IsQueryShown() {
+		a.main.SetFocus(preview.QueryPrimitive())
 		return true
 	}
 	return false

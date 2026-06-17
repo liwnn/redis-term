@@ -44,6 +44,7 @@ func NewCmdConsole(title string) *CmdConsole {
 	}
 	c.Box.SetBorder(true)
 	c.Box.SetBackgroundColor(ThemePanelBG)
+	focusBorder(c.Box)
 	c.histPos = 0
 	return c
 }

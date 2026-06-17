@@ -7,7 +7,8 @@ import (
 
 type TextPreview struct {
 	*tview.Flex
-	view *tview.TextArea
+	view     *tview.TextArea
+	infoView *tview.TextView // "Type: …  Size: …" header row, above the content
 
 	oldText  string
 	saveBtn  *tview.Button
@@ -79,18 +80,47 @@ func (p *TextPreview) init() {
 		return event
 	})
 
-	// Columns: [stretch | Copy | Edit/Save]; the action button sits right-aligned.
-	grid := tview.NewGrid().SetColumns(-1, 8, 8).SetBorders(false).SetGap(0, 2).SetMinSize(5, 5)
+	// Button group (Copy + Edit/Save), right-aligned in the header row.
+	grid := tview.NewGrid().SetRows(1).SetColumns(8, 8).SetBorders(false).SetGap(0, 1)
+	grid.SetBackgroundColor(ThemePanelBG)
+
+	// Header row mirroring the table's status row: the entry's Type/Size on the
+	// left, the action buttons on the right (instead of a separate bottom row).
+	infoView := tview.NewTextView()
+	infoView.SetDynamicColors(true)
+	infoView.SetBackgroundColor(ThemePanelBG)
+	infoRow := tview.NewFlex().SetDirection(tview.FlexColumn)
+	infoRow.SetBackgroundColor(ThemePanelBG)
+	infoRow.AddItem(infoView, 0, 1, false)
+	infoRow.AddItem(grid, 17, 0, false) // two 8-wide button slots + 1 gap
 
 	view.SetBackgroundColor(ThemePanelBG)
-	grid.SetBackgroundColor(ThemePanelBG)
+	view.SetBorder(true)
+	focusBorder(view) // own frame, brightens on focus (like the table)
+	// A disabled (read-only) TextArea's MouseHandler ignores all mouse events and
+	// never takes focus, so a click wouldn't highlight the frame. Grab focus
+	// ourselves on the press; the capture runs before the disabled guard. Consume
+	// the event (return MouseConsumed, nil) so nothing downstream steals focus back.
+	view.SetMouseCapture(func(action tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
+		// Only intercept while read-only. When editing, let the normal handler run
+		// so a click can place the cursor / select text.
+		if p.editing {
+			return action, event
+		}
+		if (action == tview.MouseLeftDown || action == tview.MouseLeftClick) && p.setFocus != nil {
+			p.setFocus(p.view)
+			return tview.MouseConsumed, nil
+		}
+		return action, event
+	})
 	flex := tview.NewFlex().
 		SetDirection(tview.FlexRow).
-		AddItem(view, 0, 1, true).
-		AddItem(grid, 1, 1, false)
+		AddItem(infoRow, 1, 0, false).
+		AddItem(view, 0, 1, true)
 	flex.SetBackgroundColor(ThemePanelBG)
 
 	p.view = view
+	p.infoView = infoView
 	p.saveBtn = saveBtn
 	p.editBtn = editBtn
 	p.copyBtn = copyBtn
@@ -104,6 +134,11 @@ func (p *TextPreview) SetText(text string) {
 	// 	text = text[:4096] + "..."
 	// }
 	p.view.SetText(text, true)
+}
+
+// SetInfo sets the Type/Size header line shown above the content.
+func (p *TextPreview) SetInfo(text string) {
+	p.infoView.SetText(text)
 }
 
 // TextArea returns the focusable editor primitive, for external focus switching.
@@ -158,7 +193,7 @@ func (p *TextPreview) commitEdit() {
 	p.refreshButtons()
 }
 
-// ShowSaveGrid lays out the bottom button row and sets whether the value is
+// ShowSaveGrid lays out the header button group and sets whether the value is
 // editable. Copy is always shown. When editable, an Edit button is shown
 // (read-only mode) or a Save button (edit mode); each new value starts read-only.
 func (p *TextPreview) ShowSaveGrid(editable bool) {
@@ -168,15 +203,21 @@ func (p *TextPreview) ShowSaveGrid(editable bool) {
 	p.refreshButtons()
 }
 
-// refreshButtons rebuilds the bottom button row to match the current edit state.
+// refreshButtons rebuilds the header button group to match the current edit state.
 func (p *TextPreview) refreshButtons() {
 	p.saveGrid.Clear()
-	p.saveGrid.AddItem(p.copyBtn, 0, 1, 1, 1, 0, 0, false)
+	// No value, no buttons: an empty/cleared preview (a folder znode with no data,
+	// or nothing selected) shows neither Copy nor Edit. While actively editing the
+	// row stays so Save is reachable even if the box was emptied.
+	if p.oldText == "" && !p.editing {
+		return
+	}
+	p.saveGrid.AddItem(p.copyBtn, 0, 0, 1, 1, 0, 0, false)
 	if p.editable {
 		if p.editing {
-			p.saveGrid.AddItem(p.saveBtn, 0, 2, 1, 1, 0, 0, false)
+			p.saveGrid.AddItem(p.saveBtn, 0, 1, 1, 1, 0, 0, false)
 		} else {
-			p.saveGrid.AddItem(p.editBtn, 0, 2, 1, 1, 0, 0, false)
+			p.saveGrid.AddItem(p.editBtn, 0, 1, 1, 1, 0, 0, false)
 		}
 	}
 }

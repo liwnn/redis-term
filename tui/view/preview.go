@@ -15,6 +15,7 @@ type Preview struct {
 	sizeText  *tview.TextView
 	typeText  *tview.TextView
 	keyType   string
+	keySize   string // current entry's "Size: N bytes" label (empty when unknown)
 	delBtn    *tview.Button
 	reloadBtn *tview.Button
 	renameBtn *tview.Button
@@ -55,9 +56,12 @@ func NewPreview() *Preview {
 	renameBtn := tview.NewButton("Rename")
 	renameBtn.SetStyle(tcell.StyleDefault.Background(ThemeBtnToolBG).Foreground(ThemeBtnToolFG))
 	renameBtn.SetActivatedStyle(tcell.StyleDefault.Background(ThemeBtnToolHoverBG).Foreground(tcell.ColorWhite))
+	// Columns: [Reload | Delete | Key input | Rename | stretch]. The former
+	// Type/Size chip columns were removed (Type/Size now live in the preview's
+	// own header row), so the buttons sit flush at the left of the op bar.
 	grid := tview.NewGrid().
 		SetRows(-1).
-		SetColumns(16, 16, 10, 10, 30, 10, -1).
+		SetColumns(10, 10, 30, 10, -1).
 		SetBorders(false).
 		SetGap(0, 2).
 		SetMinSize(5, 5)
@@ -73,12 +77,15 @@ func NewPreview() *Preview {
 	queryInput.SetFieldStyle(tcell.StyleDefault.Background(ThemeQueryBG).Foreground(ThemeQueryFG))
 	queryInput.SetPlaceholderStyle(tcell.StyleDefault.Background(ThemeQueryBG).Foreground(ThemeQueryPlaceholder))
 	queryInput.SetBackgroundColor(ThemePanelBG)
+	queryInput.SetBorder(true)
 
+	// showFlex hosts the active content (table / text / query box) and draws the
+	// preview pane's outer frame as a STATIC dim outline — it does NOT track focus.
+	// The inner content widget (table / text view / query box) carries its own
+	// frame that brightens on focus, so the selection highlight stays unambiguous
+	// (only one frame changes color) while the pane outline is always visible.
 	showFlex := tview.NewFlex().SetDirection(tview.FlexRow)
-	showFlex.
-		// SetTitle("PREVIEW").
-		SetBorder(true).
-		SetBorderColor(ThemeBorderDim)
+	showFlex.SetBorder(true).SetBorderColor(ThemeBorderDim)
 	showFlex.SetBackgroundColor(ThemePanelBG)
 
 	previewFlexBox := tview.NewFlex()
@@ -138,13 +145,25 @@ func (p *Preview) init() {
 		if idx < 0 || idx >= len(h) {
 			return
 		}
+		// Show the selected cell's type/size in the table status row (not the top
+		// op bar). dataCol = column-1; guard against the row-number column.
+		dataCol := column - 1
 		c := h[idx]
-		size := len(c[len(c)-1])
-		p.SetSizeText(fmt.Sprintf("Size: %d bytes", size))
-		if t := p.tablePreview.CellType(row, column); t != "" {
-			p.SetTypeText(fmt.Sprintf("Type: %s", t))
+		size := 0
+		if dataCol >= 0 && dataCol < len(c) {
+			size = len(c[dataCol])
 		}
+		info := fmt.Sprintf("[gray]Size: %d bytes", size)
+		if t := p.tablePreview.CellType(row, column); t != "" {
+			info = fmt.Sprintf("[gray]Type: %s   Size: %d bytes", t, size)
+		}
+		p.tablePreview.SetCellInfo(info)
 	})
+
+	// The table, text view, and query box each carry their own border and color
+	// it on focus via focusBorder (see table_preview.go / text_preview.go); the
+	// query box is registered here.
+	focusBorder(p.queryInput) // the InputField, not its Box (see main.go focusBorder)
 }
 
 // SetQueryFunc registers the callback invoked when the user submits a query in
@@ -178,29 +197,42 @@ func (p *Preview) SetQueryText(text string) {
 // Clear all
 func (p *Preview) Clear() {
 	p.keyType = ""
+	p.keySize = ""
 	p.SetSizeText("")
 	p.SetTypeText("")
 }
 
-// SetSizeText show text size
+// SetSizeText records the current entry's size label and refreshes the info row
+// shown above text content. (The label no longer lives in the top op bar.)
 func (p *Preview) SetSizeText(text string) {
-	if len(text) == 0 {
-		p.grid.RemoveItem(p.sizeText)
-		p.sizeText.SetBackgroundColor(ThemePanelBG)
-	} else {
-		p.grid.AddItem(p.sizeText, 0, 1, 1, 1, 0, 0, false)
-		p.sizeText.SetBackgroundColor(ThemeChipBG)
-	}
-	p.sizeText.SetText(text)
+	p.keySize = text
+	p.refreshTextInfo()
 }
 
 // SetKeyType set current redis key type text prefix
 func (p *Preview) SetKeyType(t string) {
 	p.keyType = t
-	p.SetTypeText("")
-	if len(t) > 0 {
-		p.SetTypeText(fmt.Sprintf("Type: %s", t))
+	p.refreshTextInfo()
+	p.tablePreview.SetEntryType(t) // also shown in the table status row
+}
+
+// refreshTextInfo rebuilds the text preview's "Type: …  Size: …" header row from
+// the current keyType/keySize, mirroring the table's status row and replacing the
+// old top-op-bar Type/Size chips.
+func (p *Preview) refreshTextInfo() {
+	parts := ""
+	if p.keyType != "" {
+		parts = fmt.Sprintf("[gray]Type: %s", p.keyType)
 	}
+	if p.keySize != "" {
+		if parts != "" {
+			parts += "   "
+		} else {
+			parts = "[gray]"
+		}
+		parts += p.keySize
+	}
+	p.textPreview.SetInfo(parts)
 }
 
 // SetTypeText set type label text
@@ -219,8 +251,8 @@ func (p *Preview) SetTypeText(text string) {
 // SetOpBtnVisible show reload delete button
 func (p *Preview) SetOpBtnVisible(visible bool) {
 	if visible {
-		p.grid.AddItem(p.reloadBtn, 0, 2, 1, 1, 0, 0, false)
-		p.grid.AddItem(p.delBtn, 0, 3, 1, 1, 0, 0, false)
+		p.grid.AddItem(p.reloadBtn, 0, 0, 1, 1, 0, 0, false)
+		p.grid.AddItem(p.delBtn, 0, 1, 1, 1, 0, 0, false)
 	} else {
 		p.grid.RemoveItem(p.reloadBtn)
 		p.grid.RemoveItem(p.delBtn)
@@ -250,8 +282,8 @@ func (p *Preview) SetClipboardFunc(f func(text string)) {
 // SetKey set key input text
 func (p *Preview) SetKey(text string) {
 	if len(text) > 0 {
-		p.grid.AddItem(p.keyInput, 0, 4, 1, 1, 0, 0, false)
-		p.grid.AddItem(p.renameBtn, 0, 5, 1, 1, 0, 0, false)
+		p.grid.AddItem(p.keyInput, 0, 2, 1, 1, 0, 0, false)
+		p.grid.AddItem(p.renameBtn, 0, 3, 1, 1, 0, 0, false)
 		p.keyInput.SetText(text)
 	} else {
 		p.grid.RemoveItem(p.keyInput)
@@ -277,7 +309,7 @@ func (p *Preview) SetRenameFunc(f func()) {
 func (p *Preview) ShowTable(title []TablePageTitle, rows []Row, cellTypes [][]string) {
 	p.showFlex.Clear()
 	if p.queryFunc != nil {
-		p.showFlex.AddItem(p.queryInput, 1, 0, false)
+		p.showFlex.AddItem(p.queryInput, 3, 0, false) // 3 rows: top border + field + bottom border
 	}
 	p.showFlex.AddItem(p.tablePreview, 0, 1, false)
 	p.tablePreview.Update(title, rows, cellTypes)
@@ -293,6 +325,22 @@ func (p *Preview) SetTableCommitFunc(f func(edits []CellEdit) error) {
 // commit or rollback (typically re-fetches and re-renders the current entry).
 func (p *Preview) SetTableReloadFunc(f func()) {
 	p.tablePreview.SetReloadFunc(f)
+}
+
+// EnableTableRowSelection toggles per-row checkboxes in the table preview.
+func (p *Preview) EnableTableRowSelection(on bool) {
+	p.tablePreview.EnableRowSelection(on)
+}
+
+// SetTableDeleteRowsFunc registers the row-deletion callback (Ctrl-D) on the
+// table preview.
+func (p *Preview) SetTableDeleteRowsFunc(f func(absRows []int) error) {
+	p.tablePreview.SetDeleteRowsFunc(f)
+}
+
+// SetTableConfirmFunc injects the confirm-dialog helper used before row deletion.
+func (p *Preview) SetTableConfirmFunc(f func(text string, okFunc func())) {
+	p.tablePreview.SetConfirmFunc(f)
 }
 
 // TablePrimitive returns the focusable table primitive of the table preview.

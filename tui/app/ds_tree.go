@@ -80,8 +80,17 @@ func NewDSTree(name string, src datasource.Datasource) *DSTree {
 	tree.SetChangedFunc(t.onChanged)
 	preview.SetTableCommitFunc(t.commitCells)
 	preview.SetTableReloadFunc(t.reloadCurrentTable)
-	preview.SetDeleteFunc(t.dropEntry)
-	preview.SetReloadFunc(t.reloadCurrentTable)
+	// Flat backends (mongo collections / mysql tables) support per-row deletion;
+	// nested mode (zookeeper) turns this off in SetNested.
+	preview.EnableTableRowSelection(true)
+	preview.SetTableDeleteRowsFunc(t.deleteRows)
+	preview.SetTableConfirmFunc(func(text string, okFunc func()) {
+		if t.ShowModal != nil {
+			t.ShowModal(text, okFunc)
+		}
+	})
+	preview.SetDeleteFunc(t.dropCurrent)
+	preview.SetReloadFunc(t.reloadCurrent)
 	preview.SetQueryFunc(t.runQuery)
 	preview.SetSaveFunc(t.saveText)
 	tree.SetInputCapture(t.onTreeKey)
@@ -115,6 +124,9 @@ func (t *DSTree) SetNested(sep, nounEntry, nounContainer string) {
 	t.pathSep = sep
 	t.entryNoun = nounEntry
 	t.containerNoun = nounContainer
+	// Nested backends (zookeeper) show znodes as editable text, not deletable
+	// rows, so turn off the per-row checkboxes enabled by NewDSTree.
+	t.preview.EnableTableRowSelection(false)
 }
 
 // runQuery re-fetches the current entry using the user-typed filter and
@@ -134,7 +146,7 @@ func (t *DSTree) runQuery(query string) {
 }
 
 // onTreeKey lets the user drop the selected collection or database with
-// 'd' or Delete.
+// 'd'/Delete, or reload the selected node's children with 'r'/F5.
 func (t *DSTree) onTreeKey(event *tcell.EventKey) *tcell.EventKey {
 	if event.Key() == tcell.KeyDelete || (event.Key() == tcell.KeyRune && event.Rune() == 'd') {
 		node := t.tree.GetCurrentNode()
@@ -151,7 +163,101 @@ func (t *DSTree) onTreeKey(event *tcell.EventKey) *tcell.EventKey {
 			return nil
 		}
 	}
+	if event.Key() == tcell.KeyF5 || (event.Key() == tcell.KeyRune && event.Rune() == 'r') {
+		if t.reloadNode() {
+			return nil
+		}
+	}
 	return event
+}
+
+// reloadNode re-fetches and rebuilds the children of the selected non-leaf node
+// (server, container, or nested folder), preserving its expand state. Returns
+// true if it handled the node. Leaf entries are left to the preview's Reload
+// button (they have no children to rebuild).
+func (t *DSTree) reloadNode() bool {
+	node := t.tree.GetCurrentNode()
+	ref, _ := node.GetReference().(*dsRef)
+	if ref == nil {
+		return false
+	}
+	switch ref.level {
+	case dsServer:
+		// Rebuild the whole tree: re-list containers from scratch.
+		node.ClearChildren()
+		t.onSelected(node)
+		node.SetExpanded(true)
+		return true
+	case dsContainer:
+		entries, err := t.src.Entries(ref.name)
+		if err != nil {
+			tlog.Log("[DSTree] reload entries %v", err)
+			if t.ShowModalOK != nil {
+				t.ShowModalOK(fmt.Sprintf("Reload failed: %v", err))
+			}
+			return true
+		}
+		node.ClearChildren()
+		if t.pathSep != "" {
+			t.addNestedChildren(node, ref.path, entries)
+		} else {
+			for _, name := range entries {
+				t.tree.AddChildNode(node, name, &dsRef{level: dsEntry, container: ref.name, name: name})
+			}
+		}
+		return true
+	case dsEntry:
+		// Only nested folder znodes have a rebuildable subtree; leaves don't.
+		if t.pathSep == "" || !ref.folder {
+			return false
+		}
+		entries, err := t.src.Entries(ref.container)
+		if err != nil {
+			tlog.Log("[DSTree] reload entries %v", err)
+			if t.ShowModalOK != nil {
+				t.ShowModalOK(fmt.Sprintf("Reload failed: %v", err))
+			}
+			return true
+		}
+		expanded := node.IsExpanded()
+		node.ClearChildren()
+		t.addNestedChildren(node, ref.path, entries)
+		node.SetExpanded(expanded)
+		return true
+	}
+	return false
+}
+
+// dropCurrent drops whatever node is selected: an entry or (in nested mode) a
+// container. Wired to the op-bar Drop button, which is shown for both.
+func (t *DSTree) dropCurrent() {
+	ref, _ := t.tree.GetCurrentNode().GetReference().(*dsRef)
+	if ref == nil {
+		return
+	}
+	if ref.level == dsContainer {
+		t.dropContainer()
+		return
+	}
+	t.dropEntry()
+}
+
+// reloadCurrent reloads whatever node is selected. For a content-bearing leaf it
+// repaints the value/table; for a folder znode or container it rebuilds the
+// subtree (same as the 'r'/F5 key). Wired to the op-bar Reload button.
+func (t *DSTree) reloadCurrent() {
+	ref, _ := t.tree.GetCurrentNode().GetReference().(*dsRef)
+	if ref == nil {
+		return
+	}
+	// A folder znode or container rebuilds its children; a plain leaf repaints.
+	if ref.level == dsContainer || (t.pathSep != "" && ref.level == dsEntry && ref.folder) {
+		t.reloadNode()
+		// Folder/container znodes also carry their own value: refresh the pane too.
+		t.onChanged(t.tree.GetCurrentNode())
+		return
+	}
+	t.reloadCurrentTable()
 }
 
 // dropEntry asks for confirmation, then drops the selected entry. In nested
@@ -262,6 +368,26 @@ func (t *DSTree) commitCells(edits []view.CellEdit) error {
 		}
 	}
 	return nil
+}
+
+// deleteRows removes the selected document/table rows by their original cell
+// values, then reloads the table. absRows index into the current content.
+func (t *DSTree) deleteRows(absRows []int) error {
+	refs := make([]datasource.RowRef, 0, len(absRows))
+	for _, r := range absRows {
+		if r < 0 || r >= len(t.cur.Rows) {
+			continue
+		}
+		var types []string
+		if t.cur.CellTypes != nil && r < len(t.cur.CellTypes) {
+			types = t.cur.CellTypes[r]
+		}
+		refs = append(refs, datasource.RowRef{Row: t.cur.Rows[r], Types: types})
+	}
+	if len(refs) == 0 {
+		return nil
+	}
+	return t.src.DeleteRows(t.curContainer, t.curEntry, t.cur.Columns, refs)
 }
 
 // reloadCurrentTable re-fetches the current entry and repaints the table,
@@ -405,21 +531,29 @@ func topSegment(path, sep string) string {
 
 func (t *DSTree) onChanged(node *tview.TreeNode) {
 	ref, _ := node.GetReference().(*dsRef)
-	// In nested mode only leaf znodes (no children) show their value; folder
-	// nodes — containers and parent entries alike — just expand/collapse. In
-	// flat mode every entry is a leaf and shows content.
-	hasContent := ref != nil && ref.level == dsEntry && !(t.pathSep != "" && ref.folder)
+	// Every entry shows content. In nested mode (zookeeper) both folder znodes and
+	// top-level containers are real nodes with their own data, so they show their
+	// value and op bar (Reload/Drop) too — selecting loads content; Enter still
+	// expands/collapses. In flat mode only entries (leaves) show content.
+	hasContent := ref != nil && (ref.level == dsEntry || (t.pathSep != "" && ref.level == dsContainer))
 	if !hasContent {
-		t.preview.SetOpBtnVisible(false)
+		// A flat-mode container (mongo database / mysql) has no single value, but it
+		// can still be dropped, so show the op bar (Reload/Drop) over an empty pane.
 		t.preview.Clear()
 		t.preview.ShowText("", false)
+		t.preview.SetOpBtnVisible(ref != nil && ref.level == dsContainer)
 		return
 	}
 	// In nested mode the backend keys content off the full path; in flat mode
 	// off the (container, entry) pair.
 	container, entry := ref.container, ref.name
 	if t.pathSep != "" {
-		container, entry = ref.container, ref.path
+		// A container's own path is "/name"; an entry already carries its full path.
+		if ref.level == dsContainer {
+			container, entry = ref.name, ref.path
+		} else {
+			container, entry = ref.container, ref.path
+		}
 	}
 	t.preview.SetOpBtnVisible(true)
 	c, err := t.src.Content(container, entry, datasource.Page{})
@@ -489,36 +623,73 @@ func (t *DSTree) Expand() {
 	root.SetExpanded(true)
 }
 
-// Filter re-lists entries of every expanded container, keeping only those whose
-// name contains term (case-insensitive). An empty term restores all entries.
-// Collapsed containers are left untouched and re-filter when next expanded.
+// Filter rebuilds the container list, keeping only containers that match the
+// term (case-insensitive) or hold a matching entry; non-matching containers are
+// hidden entirely. Matching containers are expanded so their hits are visible.
+// An empty term restores the full tree in its default collapsed state.
 func (t *DSTree) Filter(term string) {
 	needle := strings.ToLower(term)
-	for _, cNode := range t.tree.GetRoot().GetChildren() {
-		ref, _ := cNode.GetReference().(*dsRef)
-		if ref == nil || ref.level != dsContainer {
-			continue
-		}
-		if !cNode.IsExpanded() || len(cNode.GetChildren()) == 0 {
-			continue
-		}
-		entries, err := t.src.Entries(ref.name)
+	root := t.tree.GetRoot()
+	if needle == "" {
+		// Restore the default view: re-list all containers, collapsed.
+		root.ClearChildren()
+		t.onSelected(root)
+		return
+	}
+	containers, err := t.src.Containers()
+	if err != nil {
+		return
+	}
+	root.ClearChildren()
+	for _, name := range containers {
+		entries, err := t.src.Entries(name)
 		if err != nil {
 			continue
 		}
-		cNode.ClearChildren()
+		nameMatch := strings.Contains(strings.ToLower(name), needle)
+		path := t.pathSep + name
 		if t.pathSep != "" {
 			// Nested mode: keep any path whose own segment matches, plus the
-			// ancestor folders needed to reach it, so the tree stays navigable.
-			kept := keepWithAncestors(entries, ref.path, t.pathSep, needle)
-			t.addNestedChildren(cNode, ref.path, kept)
-			continue
-		}
-		for _, name := range entries {
-			if needle != "" && !strings.Contains(strings.ToLower(name), needle) {
+			// ancestor folders needed to reach it. Hide the container if nothing
+			// (its own name included) matches.
+			kept := keepWithAncestors(entries, path, t.pathSep, needle)
+			if len(kept) == 0 && !nameMatch {
 				continue
 			}
-			t.tree.AddChildNode(cNode, name, &dsRef{level: dsEntry, container: ref.name, name: name})
+			cNode := t.tree.AddChildNode(root, "▼ "+name, &dsRef{level: dsContainer, name: name, path: path, folder: true})
+			t.addNestedChildren(cNode, path, kept)
+			t.expandFolders(cNode) // reveal matches nested below intermediate folders
+			cNode.SetExpanded(true)
+			continue
+		}
+		// Flat mode: keep matching entry names; hide the container if it has none
+		// (and its own name doesn't match).
+		var matched []string
+		for _, e := range entries {
+			if strings.Contains(strings.ToLower(e), needle) {
+				matched = append(matched, e)
+			}
+		}
+		if len(matched) == 0 && !nameMatch {
+			continue
+		}
+		cNode := t.tree.AddChildNode(root, name, &dsRef{level: dsContainer, name: name, path: path})
+		for _, e := range matched {
+			t.tree.AddChildNode(cNode, e, &dsRef{level: dsEntry, container: name, name: e})
+		}
+		cNode.SetExpanded(true)
+	}
+}
+
+// expandFolders expands every nested folder node under parent (and updates its
+// twistie) so search hits buried below collapsed intermediate folders are shown.
+func (t *DSTree) expandFolders(parent *tview.TreeNode) {
+	for _, child := range parent.GetChildren() {
+		ref, _ := child.GetReference().(*dsRef)
+		if ref != nil && ref.folder {
+			child.SetExpanded(true)
+			t.syncTwistie(child, ref)
+			t.expandFolders(child)
 		}
 	}
 }

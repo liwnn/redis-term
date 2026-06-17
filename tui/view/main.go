@@ -60,6 +60,51 @@ func applyGlobalStyles() {
 	tview.Styles.BorderColor = ThemeBorderDim
 	tview.Styles.TitleColor = ThemeTitleFG
 	tview.Styles.GraphicsColor = ThemeBorderDim
+
+	// A focused box otherwise draws a DOUBLE-line border (the "two lines" look).
+	// Point the *Focus border runes at the same single-line glyphs so focus only
+	// changes the border COLOR (brighter), not the line weight. The color swap is
+	// driven per-frame by recolorBorders over panels registered via focusBorder.
+	tview.Borders.HorizontalFocus = tview.Borders.Horizontal
+	tview.Borders.VerticalFocus = tview.Borders.Vertical
+	tview.Borders.TopLeftFocus = tview.Borders.TopLeft
+	tview.Borders.TopRightFocus = tview.Borders.TopRight
+	tview.Borders.BottomLeftFocus = tview.Borders.BottomLeft
+	tview.Borders.BottomRightFocus = tview.Borders.BottomRight
+}
+
+// borderBox is the subset of a bordered primitive used to color its border by
+// focus state. *Box and its embedders (TreeView, Table, TextView, CmdConsole)
+// and *InputField all satisfy it. Using HasFocus() (rather than focus/blur
+// callbacks) is robust for InputField, whose inner textArea takes focus on a
+// mouse click and never forwards Blur back to the Box — leaving a callback-based
+// border stuck bright.
+type borderBox interface {
+	HasFocus() bool
+	SetBorderColor(tcell.Color) *tview.Box
+}
+
+// focusBorders holds every panel whose border tracks focus; recolorBorders
+// repaints them each frame from their live HasFocus() state.
+var focusBorders []borderBox
+
+// focusBorder registers a bordered panel so its border brightens while focused
+// and dims otherwise — the visual focus cue, instead of tview's doubled border.
+func focusBorder(b borderBox) {
+	b.SetBorderColor(ThemeBorderDim)
+	focusBorders = append(focusBorders, b)
+}
+
+// recolorBorders sets each registered panel's border color from whether it
+// currently holds focus. Called before every draw.
+func recolorBorders() {
+	for _, b := range focusBorders {
+		if b.HasFocus() {
+			b.SetBorderColor(ThemeBorderFocus)
+		} else {
+			b.SetBorderColor(ThemeBorderDim)
+		}
+	}
 }
 
 func (m *MainView) init() {
@@ -76,6 +121,9 @@ func (m *MainView) init() {
 		SetFieldStyle(tcell.StyleDefault.Background(ThemeQueryBG).Foreground(ThemeQueryFG)).
 		SetPlaceholderStyle(tcell.StyleDefault.Background(ThemeQueryBG).Foreground(ThemeQueryPlaceholder))
 	m.search.SetBackgroundColor(ThemeQueryBG)
+	m.search.SetBorder(true)
+	focusBorder(m.search) // register the InputField, not its Box: HasFocus() must
+	// also see the inner textArea (which holds focus on a mouse click).
 	m.leftFlexBox = tview.NewFlex().SetDirection(tview.FlexRow)
 	m.rightFlexBox = tview.NewFlex().SetDirection(tview.FlexRow)
 	m.leftFlexBox.SetBackgroundColor(ThemePanelBG)
@@ -169,40 +217,6 @@ func (m *MainView) setLeftWidth(width, total int) {
 	m.body.ResizeItem(m.leftFlexBox, width, 0)
 }
 
-// hRule returns a one-row box that draws a thin horizontal line in the dim
-// rule color, matching the right preview panel's top border.
-func hRule() *tview.Box {
-	box := tview.NewBox()
-	box.SetBackgroundColor(ThemePanelBG)
-	box.SetDrawFunc(func(screen tcell.Screen, x, y, width, height int) (int, int, int, int) {
-		st := tcell.StyleDefault.Background(ThemePanelBG).Foreground(ThemeRule)
-		cy := y + height/2
-		for cx := x; cx < x+width; cx++ {
-			screen.SetContent(cx, cy, tview.BoxDrawingsLightHorizontal, nil, st)
-		}
-		return 0, 0, 0, 0
-	})
-	return box
-}
-
-// vRule returns a one-column box that draws a thin vertical line in the dim
-// rule color over the given background, used to frame the search box. The
-// background matches the field fill so the line sits flush against it with no
-// dark gap.
-func vRule(bg tcell.Color) *tview.Box {
-	box := tview.NewBox()
-	box.SetBackgroundColor(bg)
-	box.SetDrawFunc(func(screen tcell.Screen, x, y, width, height int) (int, int, int, int) {
-		st := tcell.StyleDefault.Background(bg).Foreground(ThemeRule)
-		cx := x + width/2
-		for cy := y; cy < y+height; cy++ {
-			screen.SetContent(cx, cy, tview.BoxDrawingsLightVertical, nil, st)
-		}
-		return 0, 0, 0, 0
-	})
-	return box
-}
-
 func (m *MainView) createModal() *tview.Modal {
 	modal := tview.NewModal()
 	return modal
@@ -247,6 +261,12 @@ func (m *MainView) Run() error {
 	// clipboard (OSC52). The screen isn't available until the app starts drawing.
 	m.SetAfterDrawFunc(func(screen tcell.Screen) {
 		m.screen = screen
+	})
+	// Repaint focus-tracking panel borders from live focus state before each draw
+	// (callbacks alone miss InputField blur — see focusBorder).
+	m.SetBeforeDrawFunc(func(tcell.Screen) bool {
+		recolorBorders()
+		return false
 	})
 	return m.SetRoot(m.pages, true).EnableMouse(true).Run()
 }
@@ -363,17 +383,10 @@ func (m *MainView) SetPreviewOpBar(row tview.Primitive) {
 
 func (m *MainView) SetTree(tree tview.Primitive) {
 	m.leftFlexBox.Clear()
-	// A thin horizontal rule above the search box, aligned and color-matched
-	// with the right preview panel's top border (its row 1 here).
-	m.leftFlexBox.AddItem(hRule(), 1, 0, false)
-	// Frame the search box with a thin vertical rule on each side. The rules
-	// share the field's fill color so the whole row reads as one boxed input.
-	searchRow := tview.NewFlex().SetDirection(tview.FlexColumn)
-	searchRow.SetBackgroundColor(ThemeQueryBG)
-	searchRow.AddItem(vRule(ThemeQueryBG), 1, 0, false)
-	searchRow.AddItem(m.search, 0, 1, false)
-	searchRow.AddItem(vRule(ThemeQueryBG), 1, 0, false)
-	m.leftFlexBox.AddItem(searchRow, 1, 0, false)
+	// The search box uses the standard panel border (single line, brightens on
+	// focus) just like the tree/preview, instead of hand-drawn rules. A bordered
+	// input is 3 rows tall (top border + field + bottom border).
+	m.leftFlexBox.AddItem(m.search, 3, 0, false)
 	m.leftFlexBox.AddItem(tree, 0, 1, true)
 }
 
@@ -417,6 +430,7 @@ func (m *MainView) createBottom() tview.Primitive {
 			SetTitle(title).
 			SetBorder(true)
 		console.SetBackgroundColor(ThemePanelBG)
+		focusBorder(console.Box)
 		m.console = console
 		pages.AddPage(title, console, true, true)
 	}

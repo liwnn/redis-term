@@ -12,16 +12,15 @@ var (
 	ThemeControlBG = tcell.GetColor("darkslategray")
 	ThemeControlFG = tcell.ColorWhite
 
-	// ThemeRule is a dim line color for the thin rules framing the search box —
-	// darker than ThemeBorderDim so it recedes quietly against the panel bg.
-	ThemeRule = tcell.GetColor("#3e4348")
-
 	ThemeBorder = tcell.GetColor("steelblue")
-	// ThemeBorderDim is a muted border that recedes against the dark panel bg,
-	// avoiding the loud doubled-blue look of full steelblue everywhere — but it
-	// still needs enough contrast to read clearly as a frame.
-	ThemeBorderDim = tcell.GetColor("#c8ccd0")
-	ThemeTitleFG   = tcell.GetColor("#c8ccd0")
+	// ThemeBorderDim is the border color of an UNFOCUSED panel: dim enough to
+	// recede quietly against the dark panel bg. The focused panel switches to
+	// ThemeBorderFocus (brighter) instead of tview's default doubled-line look.
+	ThemeBorderDim = tcell.GetColor("#4a5159")
+	// ThemeBorderFocus is the border color of the FOCUSED panel — a bright steel
+	// blue so the active panel reads clearly without drawing a second line.
+	ThemeBorderFocus = tcell.GetColor("#7aa6d6")
+	ThemeTitleFG     = tcell.GetColor("#c8ccd0")
 
 	// Type/Size are rendered as muted "chips": a single slightly-lifted dark fill
 	// shared by both, distinguished only by a calm colored foreground. This keeps

@@ -183,6 +183,45 @@ func (s *MySQLSource) Update(container, entry string, e datasource.Edit) error {
 	return nil
 }
 
+// DeleteRows removes rows matched on the table's primary key, one DELETE per
+// row. Tables without a primary key are not deletable since a row can't be
+// uniquely identified.
+func (s *MySQLSource) DeleteRows(container, entry string, columns []string, rows []datasource.RowRef) error {
+	pks, err := s.primaryKeys(container, entry)
+	if err != nil {
+		return err
+	}
+	if len(pks) == 0 {
+		return fmt.Errorf("table has no primary key, not deletable")
+	}
+	colIdx := make(map[string]int, len(columns))
+	for i, c := range columns {
+		colIdx[c] = i
+	}
+	table := quoteIdent(container) + "." + quoteIdent(entry)
+	for _, r := range rows {
+		where := make([]string, 0, len(pks))
+		args := make([]interface{}, 0, len(pks))
+		for _, pk := range pks {
+			i, ok := colIdx[pk]
+			if !ok || i >= len(r.Row) {
+				return fmt.Errorf("row missing primary key column %q", pk)
+			}
+			where = append(where, quoteIdent(pk)+" = ?")
+			args = append(args, r.Row[i])
+		}
+		q := fmt.Sprintf("DELETE FROM %s WHERE %s", table, strings.Join(where, " AND "))
+		res, err := s.db.Exec(q, args...)
+		if err != nil {
+			return err
+		}
+		if n, err := res.RowsAffected(); err == nil && n == 0 {
+			return fmt.Errorf("no row matched the primary key")
+		}
+	}
+	return nil
+}
+
 // DropEntry drops a table.
 func (s *MySQLSource) DropEntry(container, entry string) error {
 	_, err := s.db.Exec("DROP TABLE " + quoteIdent(container) + "." + quoteIdent(entry))

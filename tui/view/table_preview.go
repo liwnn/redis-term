@@ -48,10 +48,15 @@ type TablePreview struct {
 	inner       *tview.Flex
 	table       *tview.Table
 	editor      *tview.InputField
-	statusView  *tview.TextView
+	statusRow    *tview.Flex // status text + cell info + pagination + action buttons
+	actionRow    *tview.Flex // trailing sub-flex holding delete/commit/rollback
+	statusView   *tview.TextView
+	cellInfoView *tview.TextView // right-aligned "Type/Size" of the selected cell
+	delBtn      *tview.Button
+	commitBtn   *tview.Button
+	rollbackBtn *tview.Button
 	prevBtn     *tview.Button
 	nextBtn     *tview.Button
-	numView     *tview.TextView
 
 	pageDelta int
 
@@ -70,6 +75,19 @@ type TablePreview struct {
 
 	pending   map[[2]int]string // staged edits keyed by [absRow, dataCol]
 	colWidths map[int]int        // per-data-column max-width overrides (dataCol -> width)
+
+	// rowSelectable enables per-row checkboxes (☐/☑) in the row-number column for
+	// backends that support row deletion (mongo/mysql). selected holds the ticked
+	// absolute row indices; onDeleteRows commits a deletion of those rows.
+	rowSelectable bool
+	selected      map[int]bool
+	onDeleteRows  func(absRows []int) error
+	confirm       func(text string, okFunc func())
+
+	// entryType is the entry's backend type (redis hash/zset/…, mongo collection,
+	// mysql table), shown on the left of the status row before the row count. The
+	// selected cell's "Type: X  Size: Y" is shown separately in cellInfoView.
+	entryType string
 
 	// stretchCol is the data column allowed to grow into leftover horizontal
 	// space when the table doesn't fill its pane: the widest-content column (a
@@ -297,6 +315,7 @@ func NewTablePreview() *TablePreview {
 		pageDelta: 1000,
 		pending:   make(map[[2]int]string),
 		colWidths: make(map[int]int),
+		selected:  make(map[int]bool),
 		hlRow:     -1,
 	}
 	p.init()
@@ -317,39 +336,25 @@ func (p *TablePreview) init() {
 		SetEvaluateAllRows(true)
 	table.SetBorder(true)
 	table.SetBackgroundColor(ThemePanelBG)
+	focusBorder(table.Box)
 	table.SetDrawFunc(func(screen tcell.Screen, x, y, width, height int) (int, int, int, int) {
 		ix, iy, iw, ih := table.GetInnerRect()
 		p.measureStretch(iw)
 		return ix, iy, iw, ih
 	})
 
-	// button
+	// pagination buttons (live in the status row, always visible)
 	prevBtn := tview.NewButton("◀")
 	prevBtn.SetStyle(tcell.StyleDefault.Background(ThemeBtnToolBG).Foreground(ThemeBtnToolFG))
 	prevBtn.SetActivatedStyle(tcell.StyleDefault.Background(ThemeBtnToolHoverBG).Foreground(tcell.ColorWhite))
 	nextBtn := tview.NewButton("▶")
 	nextBtn.SetStyle(tcell.StyleDefault.Background(ThemeBtnToolBG).Foreground(ThemeBtnToolFG))
 	nextBtn.SetActivatedStyle(tcell.StyleDefault.Background(ThemeBtnToolHoverBG).Foreground(tcell.ColorWhite))
-	opGrid := tview.NewGrid().SetRows(1).SetColumns(5, 5, -1).
-		SetBorders(false).SetGap(0, 2)
-	opGrid.AddItem(prevBtn, 0, 0, 1, 1, 0, 0, false)
-	opGrid.AddItem(nextBtn, 0, 1, 1, 1, 0, 0, false)
 
-	// right box
-	numView := tview.NewTextView()
-	numView.SetTextColor(ThemeQueryLabel)
-	ctrlBox := tview.NewFlex().SetDirection(tview.FlexRow)
-	ctrlBox.AddItem(nil, 0, 1, false)
-	ctrlBox.AddItem(numView, 1, 0, false)
-	ctrlBox.AddItem(nil, 1, 1, false)
-	ctrlBox.AddItem(opGrid, 1, 0, false)
-	ctrlBox.AddItem(nil, 1, 1, false)
-
-	// inner flex: table | ctrl
+	// inner flex: just the table (full width now that pagination moved to the
+	// status row).
 	inner := tview.NewFlex().SetDirection(tview.FlexColumn)
 	inner.AddItem(table, 0, 1, false)
-	inner.AddItem(nil, 1, 0, false)
-	inner.AddItem(ctrlBox, 13, 0, false)
 
 	// inline editor (hidden until editing)
 	editor := tview.NewInputField()
@@ -358,32 +363,90 @@ func (p *TablePreview) init() {
 		SetFieldBackgroundColor(ThemeQueryBG).
 		SetFieldTextColor(ThemeQueryFG)
 
-	// status row: shows staged-edit count + commit/rollback hint (hidden when clean)
+	// status row: always-visible text (row count / edit / selection hints) plus
+	// action buttons that appear by state — Delete on selection, Commit/Rollback
+	// on staged edits. Mirrors the web toolbar.
 	statusView := tview.NewTextView()
 	statusView.SetDynamicColors(true).SetTextColor(tcell.ColorYellow)
+	statusView.SetBackgroundColor(ThemePanelBG)
 
-	// outer flex: inner table area + status row + editor row
+	// cell info ("Type: …  Size: …") for the selected cell, right-aligned just
+	// before the pagination buttons.
+	cellInfoView := tview.NewTextView()
+	cellInfoView.SetDynamicColors(true).SetTextAlign(tview.AlignRight)
+	cellInfoView.SetBackgroundColor(ThemePanelBG)
+
+	delBtn := tview.NewButton("Delete selected")
+	delBtn.SetStyle(tcell.StyleDefault.Background(ThemeBtnDangerBG).Foreground(ThemeBtnDangerFG))
+	delBtn.SetActivatedStyle(tcell.StyleDefault.Background(ThemeBtnDangerHoverBG).Foreground(tcell.ColorWhite))
+	commitBtn := tview.NewButton("Commit")
+	commitBtn.SetStyle(tcell.StyleDefault.Background(ThemeBtnToolBG).Foreground(ThemeBtnToolFG))
+	commitBtn.SetActivatedStyle(tcell.StyleDefault.Background(ThemeBtnToolHoverBG).Foreground(tcell.ColorWhite))
+	rollbackBtn := tview.NewButton("Rollback")
+	rollbackBtn.SetStyle(tcell.StyleDefault.Background(ThemeBtnToolBG).Foreground(ThemeBtnToolFG))
+	rollbackBtn.SetActivatedStyle(tcell.StyleDefault.Background(ThemeBtnToolHoverBG).Foreground(tcell.ColorWhite))
+
+	// status row (above the table, below the query box), left→right: status text
+	// (flexes to push the rest right), pagination ◀ ▶ (always shown), then the
+	// state-dependent action buttons (Delete / Commit / Rollback). The action
+	// buttons live in a trailing sub-flex so updateStatus can repopulate just them
+	// without disturbing the always-present pagination.
+	actionRow := tview.NewFlex().SetDirection(tview.FlexColumn)
+	actionRow.SetBackgroundColor(ThemePanelBG)
+
+	// Left→right: status text (sized to its content) immediately followed by the
+	// action buttons (Delete / Commit / Rollback), then cell info filling the gap
+	// right-aligned, then pagination ◀ ▶. statusView and actionRow widths are set
+	// per-update by updateStatus.
+	statusRow := tview.NewFlex().SetDirection(tview.FlexColumn)
+	statusRow.SetBackgroundColor(ThemePanelBG)
+	statusRow.AddItem(statusView, 0, 0, false)   // width set by updateStatus
+	statusRow.AddItem(actionRow, 0, 0, false)     // width set by updateStatus
+	statusRow.AddItem(cellInfoView, 0, 1, false)  // fills middle; text right-aligned
+	statusRow.AddItem(nil, 2, 0, false)
+	statusRow.AddItem(prevBtn, 3, 0, false)
+	statusRow.AddItem(nil, 1, 0, false)
+	statusRow.AddItem(nextBtn, 3, 0, false)
+
+	// outer flex: status row (above the table, below the query box) + inner table
+	// area + editor row. The status row is always present; the editor row is added
+	// on demand at the bottom while editing.
 	outer := tview.NewFlex().SetDirection(tview.FlexRow)
 	outer.SetBackgroundColor(ThemePanelBG)
 	inner.SetBackgroundColor(ThemePanelBG)
-	ctrlBox.SetBackgroundColor(ThemePanelBG)
 	statusView.SetBackgroundColor(ThemePanelBG)
-	numView.SetBackgroundColor(ThemePanelBG)
+	outer.AddItem(statusRow, 1, 0, false)
 	outer.AddItem(inner, 0, 1, false)
 
 	p.Flex = outer
 	p.inner = inner
 	p.table = table
 	p.editor = editor
+	p.statusRow = statusRow
+	p.actionRow = actionRow
 	p.statusView = statusView
+	p.cellInfoView = cellInfoView
+	p.delBtn = delBtn
+	p.commitBtn = commitBtn
+	p.rollbackBtn = rollbackBtn
 	p.nextBtn = nextBtn
 	p.prevBtn = prevBtn
-	p.numView = numView
 
 	prevBtn.SetSelectedFunc(p.prevPage)
 	nextBtn.SetSelectedFunc(p.nextPage)
+	delBtn.SetSelectedFunc(p.deleteSelected)
+	commitBtn.SetSelectedFunc(p.commit)
+	rollbackBtn.SetSelectedFunc(p.rollback)
 	table.SetInputCapture(p.onTableKey)
 	editor.SetDoneFunc(p.onEditorDone)
+	// Losing focus while editing (e.g. clicking elsewhere) cancels the edit
+	// without staging — same as pressing Esc. DoneFunc only fires on Enter/Tab/Esc,
+	// so a click away would otherwise leave the editor open.
+	editor.SetBlurFunc(func() {
+		if p.editing {
+			p.cancelEdit()
+		}
+	})
 	table.SetSelectionChangedFunc(p.onSelectionChanged)
 }
 
@@ -455,9 +518,19 @@ func (p *TablePreview) onTableKey(event *tcell.EventKey) *tcell.EventKey {
 	case tcell.KeyCtrlS:
 		p.commit()
 		return nil
+	case tcell.KeyCtrlD:
+		if p.rowSelectable && len(p.selected) > 0 {
+			p.deleteSelected()
+			return nil
+		}
+		return event
 	case tcell.KeyCtrlR, tcell.KeyEsc:
 		if len(p.pending) > 0 {
 			p.rollback()
+			return nil
+		}
+		if len(p.selected) > 0 {
+			p.clearSelection()
 			return nil
 		}
 		return event
@@ -483,6 +556,11 @@ func (p *TablePreview) onTableKey(event *tcell.EventKey) *tcell.EventKey {
 		return nil
 	case tcell.KeyRune:
 		switch event.Rune() {
+		case ' ': // toggle row selection
+			if p.rowSelectable {
+				p.toggleSelectedRow()
+				return nil
+			}
 		case '+', '=': // widen selected column
 			p.resizeSelectedCol(colWidthStep)
 			return nil
@@ -524,6 +602,82 @@ func (p *TablePreview) resizeSelectedCol(delta int) {
 	p.table.Select(selRow, selCol)
 }
 
+// toggleSelectedRow flips the ticked state of the row holding the current
+// selection (Space key path).
+func (p *TablePreview) toggleSelectedRow() {
+	r, _ := p.table.GetSelection()
+	if r <= 0 {
+		return
+	}
+	p.toggleRow(p.curPage*p.pageDelta + r - 1)
+}
+
+// toggleRow flips the ticked state of the given absolute row, repaints its
+// row-number cell, and refreshes the status line. Shared by the Space key and
+// the mouse-click handler on the checkbox cell.
+func (p *TablePreview) toggleRow(absRow int) {
+	if absRow < 0 || absRow >= len(p.rows) {
+		return
+	}
+	if p.selected[absRow] {
+		delete(p.selected, absRow)
+	} else {
+		p.selected[absRow] = true
+	}
+	showRow := absRow - p.curPage*p.pageDelta + 1
+	if c := p.table.GetCell(showRow, 0); c != nil {
+		c.SetText(p.idxText(absRow))
+	}
+	p.updateStatus()
+}
+
+// clearSelection unticks all rows and repaints the visible row-number cells.
+func (p *TablePreview) clearSelection() {
+	if len(p.selected) == 0 {
+		return
+	}
+	p.selected = make(map[int]bool)
+	begin := p.pageDelta * p.curPage
+	end := begin + p.pageDelta - 1
+	if end >= len(p.rows) {
+		end = len(p.rows) - 1
+	}
+	for i := begin; i <= end; i++ {
+		if c := p.table.GetCell(i-begin+1, 0); c != nil {
+			c.SetText(p.idxText(i))
+		}
+	}
+	p.updateStatus()
+}
+
+// deleteSelected confirms, then deletes the ticked rows via onDeleteRows.
+func (p *TablePreview) deleteSelected() {
+	if p.onDeleteRows == nil || len(p.selected) == 0 {
+		return
+	}
+	absRows := make([]int, 0, len(p.selected))
+	for r := range p.selected {
+		absRows = append(absRows, r)
+	}
+	sort.Ints(absRows)
+	doDelete := func() {
+		if err := p.onDeleteRows(absRows); err != nil {
+			p.statusView.SetText(fmt.Sprintf("[red]delete failed: %v", err))
+			return
+		}
+		p.selected = make(map[int]bool)
+		p.updateStatus()
+		if p.onReload != nil {
+			p.onReload()
+		}
+	}
+	if p.confirm != nil {
+		p.confirm(fmt.Sprintf("Delete %d selected row(s)?", len(absRows)), doDelete)
+		return
+	}
+	doDelete()
+}
+
 func (p *TablePreview) startEdit(r, c int, cur string) {
 	p.editing = true
 	p.editRow, p.editCol = r, c
@@ -560,6 +714,14 @@ func (p *TablePreview) endEdit() {
 	}
 }
 
+// cancelEdit closes the editor without staging the value (the editor lost focus,
+// e.g. a click landed elsewhere). It does NOT grab focus back to the table, since
+// focus is intentionally moving away.
+func (p *TablePreview) cancelEdit() {
+	p.editing = false
+	p.Flex.RemoveItem(p.editor)
+}
+
 // stage records a pending edit and repaints the affected cell as dirty.
 func (p *TablePreview) stage(absRow, dataCol int, value string) {
 	p.pending[[2]int{absRow, dataCol}] = value
@@ -587,16 +749,70 @@ func (p *TablePreview) paintCell(absRow, dataCol int) {
 	p.table.SetCell(showRow, dataCol+1, cell)
 }
 
-// updateStatus shows or hides the staged-edit status line.
+// updateStatus refreshes the always-visible status row, mirroring the web
+// toolbar: staged edits take precedence (Commit/Rollback buttons), then a row
+// selection (Delete button), otherwise the idle row count. The status text is
+// sized to its content so the action buttons sit immediately after it.
 func (p *TablePreview) updateStatus() {
-	n := len(p.pending)
-	if n == 0 {
-		p.Flex.RemoveItem(p.statusView)
-		return
+	p.actionRow.Clear()
+	statusText := ""
+	actionWidth := 0
+	if n := len(p.pending); n > 0 {
+		statusText = fmt.Sprintf("[yellow]%d pending edit(s)  [white]Ctrl-S[yellow]=commit  [white]Esc[yellow]=rollback", n)
+		p.actionRow.AddItem(nil, 1, 0, false)
+		p.actionRow.AddItem(p.commitBtn, 10, 0, false)
+		p.actionRow.AddItem(nil, 1, 0, false)
+		p.actionRow.AddItem(p.rollbackBtn, 12, 0, false)
+		actionWidth = 24
+	} else if n := len(p.selected); n > 0 {
+		statusText = fmt.Sprintf("[yellow]%d row(s) selected  [white]Ctrl-D[yellow]=delete", n)
+		label := fmt.Sprintf("Delete selected (%d)", n)
+		p.delBtn.SetLabel(label)
+		p.actionRow.AddItem(nil, 1, 0, false)
+		p.actionRow.AddItem(p.delBtn, len(label)+2, 0, false)
+		actionWidth = len(label) + 3
+	} else {
+		statusText = fmt.Sprintf("[gray]%d row%s", len(p.rows), plural(len(p.rows)))
+		if p.entryType != "" {
+			statusText = fmt.Sprintf("[gray]Type: %s   %d row%s", p.entryType, len(p.rows), plural(len(p.rows)))
+		}
 	}
-	p.statusView.SetText(fmt.Sprintf("[yellow]%d pending edit(s)  [white]Ctrl-S[yellow]=commit  [white]Esc[yellow]=rollback", n))
-	p.Flex.RemoveItem(p.statusView)
-	p.Flex.AddItem(p.statusView, 1, 0, false)
+	p.statusView.SetText(statusText)
+	// Resize statusView to its visible text (tags stripped) + a small pad, and
+	// the action slot to its buttons, so the buttons sit right after the text.
+	p.statusRow.ResizeItem(p.statusView, plainWidth(statusText)+2, 0)
+	p.statusRow.ResizeItem(p.actionRow, actionWidth, 0)
+}
+
+// plainWidth returns the rune width of s with tview color tags ([...]) removed.
+func plainWidth(s string) int {
+	n, inTag := 0, false
+	for _, r := range s {
+		switch {
+		case r == '[':
+			inTag = true
+		case r == ']':
+			inTag = false
+		case !inTag:
+			n++
+		}
+	}
+	return n
+}
+
+// SetEntryType sets the entry's backend type shown on the left of the idle
+// status line (redis hash/zset, mongo collection, mysql table).
+func (p *TablePreview) SetEntryType(t string) {
+	p.entryType = t
+	p.updateStatus()
+}
+
+// plural returns "s" unless n == 1.
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
 }
 
 // commit flushes all staged edits via onCommit, then reloads on success.
@@ -655,6 +871,41 @@ func (p *TablePreview) SetFocusFunc(f func(p tview.Primitive)) {
 	p.focus = f
 }
 
+// EnableRowSelection toggles per-row checkboxes in the row-number column.
+func (p *TablePreview) EnableRowSelection(on bool) {
+	p.rowSelectable = on
+}
+
+// SetDeleteRowsFunc registers the callback invoked (after confirmation) when the
+// user deletes the ticked rows with Ctrl-D. It receives sorted absolute rows.
+func (p *TablePreview) SetDeleteRowsFunc(f func(absRows []int) error) {
+	p.onDeleteRows = f
+}
+
+// SetConfirmFunc injects the confirm-dialog helper used before a row deletion.
+func (p *TablePreview) SetConfirmFunc(f func(text string, okFunc func())) {
+	p.confirm = f
+}
+
+// SetCellInfo sets the right-aligned selected-cell label (e.g. "Type: int
+// Size: 4 bytes") shown in the status row.
+func (p *TablePreview) SetCellInfo(text string) {
+	p.cellInfoView.SetText(text)
+}
+
+// idxText renders the row-number cell text, prefixed with a checkbox glyph when
+// row selection is enabled.
+func (p *TablePreview) idxText(absRow int) string {
+	n := strconv.Itoa(absRow + 1)
+	if !p.rowSelectable {
+		return n
+	}
+	if p.selected[absRow] {
+		return "☑ " + n
+	}
+	return "☐ " + n
+}
+
 // CellType returns the backend type of the cell at table coords (row, col).
 func (p *TablePreview) CellType(row, column int) string {
 	if row <= 0 || column <= 0 || p.cellTypes == nil {
@@ -690,11 +941,12 @@ func (p *TablePreview) Update(title []TablePageTitle, rows []Row, cellTypes [][]
 	p.rows = rows
 	p.cellTypes = cellTypes
 	p.pending = make(map[[2]int]string)
+	p.selected = make(map[int]bool) // drop row ticks from the previous key
 	p.colWidths = make(map[int]int) // drop manual overrides from the previous key
 	p.stretchCol = widestColumn(title, rows)
 	p.stretchWidth = 0 // re-measured on the next draw against the real pane width
 	p.computeContentWidths()
-	p.Flex.RemoveItem(p.statusView)
+	p.cellInfoView.SetText("") // clear stale type/size from the previous entry
 
 	pageCount := len(rows) / p.pageDelta
 	if len(rows)%p.pageDelta > 0 {
@@ -703,7 +955,7 @@ func (p *TablePreview) Update(title []TablePageTitle, rows []Row, cellTypes [][]
 	p.totalPage = pageCount
 	p.Show(0)
 
-	p.numView.SetText("Count:" + strconv.Itoa(len(rows)))
+	p.updateStatus()
 }
 
 func (p *TablePreview) Show(pageNum int) {
@@ -724,8 +976,18 @@ func (p *TablePreview) Show(pageNum int) {
 		}
 		p.table.SetCell(0, i, hcell)
 	}
-	p.hlRow = 1
-	p.table.Select(1, 1)
+	// With no data rows, make the table non-selectable and don't point the
+	// selection at a phantom row: a selectable table whose only row is the
+	// non-selectable header spins tview's draw-time selection clamp and freezes
+	// the UI. Re-enable selection once there are rows to land on.
+	if len(p.rows) == 0 {
+		p.table.SetSelectable(false, false)
+		p.hlRow = -1
+	} else {
+		p.table.SetSelectable(true, true)
+		p.hlRow = 1
+		p.table.Select(1, 1)
+	}
 	p.table.ScrollToBeginning()
 
 	var begin = p.pageDelta * pageNum
@@ -736,11 +998,20 @@ func (p *TablePreview) Show(pageNum int) {
 	for i := begin; i <= end; i++ {
 		row := p.rows[i]
 		showIndex := i - begin + 1
-		idxCell := tview.NewTableCell(strconv.Itoa(i + 1)).SetSelectable(false)
+		idxCell := tview.NewTableCell(p.idxText(i)).SetSelectable(false)
 		if showIndex == p.hlRow {
 			idxCell.SetBackgroundColor(ThemeRowHighlightBG)
 		} else {
 			idxCell.SetBackgroundColor(ThemePanelBG)
+		}
+		if p.rowSelectable {
+			// Clicking the checkbox cell toggles that row's ticked state. Returning
+			// true suppresses the normal cell-select so the click only toggles.
+			absRow := i
+			idxCell.SetClickedFunc(func() bool {
+				p.toggleRow(absRow)
+				return true
+			})
 		}
 		p.table.SetCell(showIndex, 0, idxCell)
 		for j, c := range row {

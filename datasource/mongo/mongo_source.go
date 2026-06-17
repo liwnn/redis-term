@@ -379,6 +379,28 @@ func shellLimit(q string) (int64, bool) {
 	return n, true
 }
 
+// DeleteRows removes documents matched precisely by their _id (coerced to its
+// real bson type), one DeleteOne per row — never a bulk match.
+func (s *MongoSource) DeleteRows(container, entry string, columns []string, rows []datasource.RowRef) error {
+	c, cancel := ctx()
+	defer cancel()
+	coll := s.client.Database(container).Collection(entry)
+	for _, r := range rows {
+		idVal, err := docID(columns, r.Row, r.Types)
+		if err != nil {
+			return err
+		}
+		res, err := coll.DeleteOne(c, bson.M{"_id": idVal})
+		if err != nil {
+			return err
+		}
+		if res.DeletedCount == 0 {
+			return fmt.Errorf("no document matched _id")
+		}
+	}
+	return nil
+}
+
 // DropEntry drops a collection from a database.
 func (s *MongoSource) DropEntry(container, entry string) error {
 	c, cancel := ctx()
