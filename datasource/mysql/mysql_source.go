@@ -137,6 +137,11 @@ func (s *MySQLSource) Content(container, entry string, page datasource.Page) (da
 // Update writes a single cell change via UPDATE matched on the table's primary
 // key. Primary-key columns are not editable; tables without a primary key are
 // read-only since a row can't be uniquely identified.
+// Rename is not supported for mysql.
+func (s *MySQLSource) Rename(_, _, _ string) error {
+	return fmt.Errorf("rename not supported")
+}
+
 func (s *MySQLSource) Update(container, entry string, e datasource.Edit) error {
 	if e.Column < 0 || e.Column >= len(e.Columns) {
 		return fmt.Errorf("invalid column")

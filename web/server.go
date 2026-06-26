@@ -16,7 +16,7 @@ import (
 	"github.com/liwnn/redisterm/datasource"
 	"github.com/liwnn/redisterm/datasource/mongo"
 	"github.com/liwnn/redisterm/datasource/mysql"
-	"github.com/liwnn/redisterm/datasource/redisapi"
+	"github.com/liwnn/redisterm/datasource/redis"
 	"github.com/liwnn/redisterm/datasource/zookeeper"
 )
 
@@ -83,7 +83,7 @@ func (s *Server) source(index int) (datasource.Datasource, error) {
 		ds = zookeeper.NewZKSource(conf.Host, conf.Port)
 	default:
 		address := fmt.Sprintf("%v:%v", conf.Host, conf.Port)
-		ds = datasource.NewRedisSource(address, conf.Auth)
+		ds = redis.NewRedisSource(address, conf.Auth)
 	}
 	if err := ds.Open(); err != nil {
 		return nil, err
@@ -166,12 +166,12 @@ type connBody struct {
 
 // toConfig converts a request body to a stored config. Redis keeps an empty Kind
 // for backward compatibility (older configs predate the field).
-func (b connBody) toConfig() redisapi.RedisConfig {
+func (b connBody) toConfig() config.Conn {
 	kind := b.Kind
 	if kind == "redis" {
 		kind = ""
 	}
-	return redisapi.RedisConfig{
+	return config.Conn{
 		Name: b.Name, Host: b.Host, Port: b.Port, User: b.User,
 		Auth: b.Auth, Kind: kind, URI: b.URI, DB: b.DB,
 	}
@@ -256,7 +256,7 @@ func (s *Server) handleConnTest(w http.ResponseWriter, r *http.Request) {
 	case "zookeeper":
 		ds = zookeeper.NewZKSource(conf.Host, conf.Port)
 	default:
-		ds = datasource.NewRedisSource(fmt.Sprintf("%v:%v", conf.Host, conf.Port), conf.Auth)
+		ds = redis.NewRedisSource(fmt.Sprintf("%v:%v", conf.Host, conf.Port), conf.Auth)
 	}
 	if err := ds.Open(); err != nil {
 		writeErr(w, err)
@@ -288,7 +288,49 @@ func (s *Server) handleContainers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, names)
 }
 
-// handleEntries lists entries in a container, optionally filtered by a glob match.
+// entryStreamer is the optional fast path: a source that hands entries to a
+// callback batch-by-batch as SCAN returns them, so a huge keyspace is filtered
+// inline without an intermediate full copy. Redis implements it; other sources
+// fall back to Entries(). The full list is always returned — the browser
+// virtualizes the key tree (renders only the visible window), mirroring the TUI,
+// so there is no cap.
+type entryStreamer interface {
+	EntriesStream(container string, fn func(batch []string) bool) error
+}
+
+// collectEntries returns every entry for container, filtered by match. Streaming
+// sources filter each SCAN batch as it arrives; non-streaming sources list
+// everything and filter the slice.
+func collectEntries(ds datasource.Datasource, container, match string) ([]string, error) {
+	glob := match != "" && match != "*"
+	if es, ok := ds.(entryStreamer); ok {
+		var out []string
+		err := es.EntriesStream(container, func(batch []string) bool {
+			for _, k := range batch {
+				if glob && !keyMatches(match, k) {
+					continue
+				}
+				out = append(out, k)
+			}
+			return true
+		})
+		if err != nil {
+			return nil, err
+		}
+		return out, nil
+	}
+	all, err := ds.Entries(container)
+	if err != nil {
+		return nil, err
+	}
+	if glob {
+		all = filterMatch(all, match)
+	}
+	return all, nil
+}
+
+// handleEntries lists every entry in a container, optionally filtered by a glob
+// match. The full list is returned; the UI virtualizes rendering.
 func (s *Server) handleEntries(w http.ResponseWriter, r *http.Request) {
 	ds, err := s.source(intParam(r, "conn", 0))
 	if err != nil {
@@ -296,13 +338,10 @@ func (s *Server) handleEntries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	container := r.URL.Query().Get("container")
-	entries, err := ds.Entries(container)
+	entries, err := collectEntries(ds, container, r.URL.Query().Get("match"))
 	if err != nil {
 		writeErr(w, err)
 		return
-	}
-	if match := r.URL.Query().Get("match"); match != "" && match != "*" {
-		entries = filterMatch(entries, match)
 	}
 	writeJSON(w, entries)
 }
@@ -510,22 +549,21 @@ func (s *Server) handleCmd(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"reply": reply})
 }
 
-// filterMatch keeps items matching a pattern. A pattern containing '*' is a
-// glob (case-sensitive, anchored); a plain pattern is a case-insensitive
+// keyMatches reports whether a single item matches pattern. A pattern containing
+// '*' is a glob (case-sensitive, anchored); a plain pattern is a case-insensitive
 // substring search so typing "user" finds "user:1" without needing wildcards.
+func keyMatches(pattern, item string) bool {
+	if strings.Contains(pattern, "*") {
+		return globMatch(pattern, item)
+	}
+	return strings.Contains(strings.ToLower(item), strings.ToLower(pattern))
+}
+
+// filterMatch keeps items matching a pattern (see keyMatches for semantics).
 func filterMatch(items []string, pattern string) []string {
 	out := items[:0:0]
-	if strings.Contains(pattern, "*") {
-		for _, it := range items {
-			if globMatch(pattern, it) {
-				out = append(out, it)
-			}
-		}
-		return out
-	}
-	needle := strings.ToLower(pattern)
 	for _, it := range items {
-		if strings.Contains(strings.ToLower(it), needle) {
+		if keyMatches(pattern, it) {
 			out = append(out, it)
 		}
 	}

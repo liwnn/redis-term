@@ -68,6 +68,9 @@ type Datasource interface {
 	Content(container, entry string, page Page) (Content, error)
 	// Update writes a single table cell change back to the backend.
 	Update(container, entry string, e Edit) error
+	// Rename changes an entry's key within a container (redis RENAME). Backends
+	// without rename return an error.
+	Rename(container, oldEntry, newEntry string) error
 	// DeleteRows removes the given rows from an entry (mysql table rows / mongo
 	// documents), located by primary key / _id. Backends without row-level
 	// deletion return an error.

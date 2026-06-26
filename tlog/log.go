@@ -7,7 +7,7 @@ import (
 )
 
 var (
-	global = log.New(os.Stderr, "", log.LstdFlags)
+	global = log.New(os.Stderr, "", log.Ldate|log.Lmicroseconds)
 )
 
 // SetLogger set output

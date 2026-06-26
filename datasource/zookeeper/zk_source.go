@@ -159,6 +159,11 @@ func (s *ZKSource) Update(_, entry string, e datasource.Edit) error {
 	return err
 }
 
+// Rename is not supported for zookeeper.
+func (s *ZKSource) Rename(_, _, _ string) error {
+	return fmt.Errorf("rename not supported")
+}
+
 // DeleteRows is not supported for zookeeper (znodes are edited as text, not rows).
 func (s *ZKSource) DeleteRows(_, _ string, _ []string, _ []datasource.RowRef) error {
 	return fmt.Errorf("row deletion not supported")

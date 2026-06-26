@@ -23,7 +23,7 @@ type MainView struct {
 	dragDivider bool // a divider drag is in progress
 
 	bottomPanel tview.Primitive
-	console     *tview.TextView
+	console     *LogConsole
 
 	opLine      *OpLine
 	cmdConsole  *CmdConsole
@@ -35,6 +35,8 @@ type MainView struct {
 
 	bottomTabs  *tview.TextView // the CONSOLE / redis-cli tab strip
 	bottomPages *tview.Pages    // the panel pages switched by the tab strip
+	activeTab   string          // currently selected bottom tab ("CONSOLE" / "redis-cli")
+	cliVisible  bool            // whether the redis-cli tab is shown (redis backends only)
 
 	screen tcell.Screen // live tcell screen, captured on first draw, for clipboard
 }
@@ -409,6 +411,16 @@ func (m *MainView) GetCmd() *CmdConsole {
 	return m.cmdConsole
 }
 
+// BottomPanelPrimitive returns the focusable widget of the bottom panel's active
+// tab — the redis-cli command console when that tab is selected, otherwise the
+// CONSOLE log. Used so Tab can cycle focus into the bottom panel.
+func (m *MainView) BottomPanelPrimitive() tview.Primitive {
+	if m.activeTab == "redis-cli" && m.cliVisible {
+		return m.cmdConsole
+	}
+	return m.console
+}
+
 func (m *MainView) createBottom() tview.Primitive {
 	pages := tview.NewPages()
 
@@ -418,25 +430,33 @@ func (m *MainView) createBottom() tview.Primitive {
 		SetRegions(true).
 		SetWrap(false).
 		SetHighlightedFunc(func(added, removed, remaining []string) {
+			// A click highlights the region; record it as the active tab, switch the
+			// panel, then immediately clear tview's reverse-video highlight — the
+			// active tab is colored as a themed chip by renderBottomTabs instead.
+			if len(added) == 0 {
+				return
+			}
+			m.activeTab = added[0]
 			pages.SwitchToPage(added[0])
+			m.bottomTabs.Highlight()
+			m.renderBottomTabs(m.cliVisible)
 		})
 	info.SetBackgroundColor(ThemePanelBG)
 
 	{
 		title := "CONSOLE"
-		console := tview.NewTextView()
-		console.
-			SetScrollable(true).
-			SetTitle(title).
-			SetBorder(true)
-		console.SetBackgroundColor(ThemePanelBG)
-		focusBorder(console.Box)
+		// A custom read-only console so the user can drag-select and copy log text.
+		// It follows the tail itself on each Write; redraws are driven by the app
+		// event loop / QueueUpdateDraw callers.
+		console := NewLogConsole(title)
+		console.SetClipboardFunc(m.Clipboard)
 		m.console = console
 		pages.AddPage(title, console, true, true)
 	}
 
 	{
 		cmd := NewCmdConsole("redis-cli")
+		cmd.SetClipboardFunc(m.Clipboard)
 		m.cmdConsole = cmd
 		pages.AddPage(cmd.Title(), cmd, true, false)
 	}
@@ -456,18 +476,40 @@ func (m *MainView) createBottom() tview.Primitive {
 // renderBottomTabs rebuilds the bottom tab strip. The redis-cli tab is only
 // shown for redis connections (it issues raw redis commands); for other backends
 // it's hidden and the panel falls back to CONSOLE. Call on every connection show.
+//
+// The active tab is drawn as a solid themed chip (blue fill, matching the rest
+// of the selection theme) rather than tview's default reverse-video highlight;
+// regions are still emitted so a click is detected, but the highlight is cleared
+// in SetHighlightedFunc.
 func (m *MainView) renderBottomTabs(isRedis bool) {
 	if m.bottomTabs == nil {
 		return
 	}
-	m.bottomTabs.Clear()
-	fmt.Fprintf(m.bottomTabs, `["CONSOLE"][#9aa6c2]CONSOLE[white][""] `)
-	if isRedis {
-		fmt.Fprintf(m.bottomTabs, `["redis-cli"][#9aa6c2]redis-cli[white][""] `)
-	} else if name, _ := m.bottomPages.GetFrontPage(); name == "redis-cli" {
-		m.bottomPages.SwitchToPage("CONSOLE") // active tab vanished; fall back
+	m.cliVisible = isRedis
+	if m.activeTab == "" {
+		m.activeTab = "CONSOLE"
 	}
-	m.bottomTabs.Highlight("CONSOLE")
+	// If the cli tab is hidden while it was active, fall back to CONSOLE.
+	if !isRedis && m.activeTab == "redis-cli" {
+		m.activeTab = "CONSOLE"
+		m.bottomPages.SwitchToPage("CONSOLE")
+	}
+
+	m.bottomTabs.Clear()
+	fmt.Fprint(m.bottomTabs, m.tabChip("CONSOLE"))
+	if isRedis {
+		fmt.Fprint(m.bottomTabs, " "+m.tabChip("redis-cli"))
+	}
+}
+
+// tabChip renders one tab as a tview color-tag string: the active tab gets a
+// solid blue fill with white text (a pill, padded by a space on each side); an
+// inactive tab is dim text on the panel background.
+func (m *MainView) tabChip(id string) string {
+	if id == m.activeTab {
+		return fmt.Sprintf(`["%s"][%s:%s] %s [-:-][""]`, id, tabActiveFG, tabActiveBG, id)
+	}
+	return fmt.Sprintf(`["%s"][%s:-] %s [-:-][""]`, id, tabInactiveFG, id)
 }
 
 // SetCliVisible shows or hides the redis-cli tab based on the active backend.

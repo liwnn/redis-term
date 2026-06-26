@@ -19,6 +19,13 @@ type TextPreview struct {
 	editable bool // content supports editing at all (Save-capable entry)
 	editing  bool // currently in edit mode (textarea writable)
 
+	// copyOnSelect, when true, makes the next selection change copy the selection
+	// to the clipboard. Set on mouse up / double-click (read-only mode) and cleared
+	// after the SetMovedFunc callback fires, so the copy reads the selection AFTER
+	// the TextArea's own mouse handler has updated it (the mouse capture runs
+	// before that handler, where the double-click selection isn't set yet).
+	copyOnSelect bool
+
 	onSave  func(oldValue, newValue string)
 	onCopy  func(text string)
 	setFocus func(p tview.Primitive)
@@ -32,8 +39,12 @@ func NewTextPreview() *TextPreview {
 
 func (p *TextPreview) init() {
 	// Read-only by default; the user opts into editing with `i` or the Edit button.
+	// We keep the TextArea ENABLED even when read-only (instead of SetDisabled),
+	// because a disabled TextArea's MouseHandler ignores every mouse event, which
+	// would kill drag-to-select and double-click-to-select. Read-only is enforced
+	// instead by the input capture below, which swallows mutating keys while
+	// letting navigation/selection keys through.
 	view := tview.NewTextArea().SetWrap(true)
-	view.SetDisabled(true)
 
 	saveBtn := tview.NewButton("Save")
 	saveBtn.SetStyle(tcell.StyleDefault.Background(ThemeBtnToolBG).Foreground(ThemeBtnToolFG))
@@ -63,15 +74,19 @@ func (p *TextPreview) init() {
 	})
 
 	// `i` enters edit mode when the value is editable; Esc restores read-only and
-	// discards unsaved changes. The capture runs even while the textarea is
-	// disabled (WrapInputHandler runs the capture before the disabled guard).
+	// discards unsaved changes. In read-only mode the box stays enabled (so mouse
+	// selection works), so the capture must itself block any key that would mutate
+	// text, allowing only cursor movement, selection and copy through.
 	view.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if !p.editing {
 			if p.editable && event.Key() == tcell.KeyRune && event.Rune() == 'i' {
 				p.enterEdit()
 				return nil
 			}
-			return event
+			if isReadOnlyTextKey(event) {
+				return event
+			}
+			return nil // swallow everything else so read-only text can't be edited
 		}
 		if event.Key() == tcell.KeyEscape {
 			p.exitEdit()
@@ -97,21 +112,35 @@ func (p *TextPreview) init() {
 	view.SetBackgroundColor(ThemePanelBG)
 	view.SetBorder(true)
 	focusBorder(view) // own frame, brightens on focus (like the table)
-	// A disabled (read-only) TextArea's MouseHandler ignores all mouse events and
-	// never takes focus, so a click wouldn't highlight the frame. Grab focus
-	// ourselves on the press; the capture runs before the disabled guard. Consume
-	// the event (return MouseConsumed, nil) so nothing downstream steals focus back.
+	// The box stays enabled in read-only mode, so the TextArea's own MouseHandler
+	// drives drag-to-select and double-click-to-select and grabs focus on press —
+	// no mouse interception needed. Copy the selection to the clipboard on release,
+	// matching the CONSOLE panel's copy-on-select behavior.
+	//
+	// Drag: at MouseLeftUp the selection is already set (the prior MouseMove events
+	// updated it), so the capture — which runs BEFORE the native handler — can read
+	// and copy it immediately. Double-click: the word selection is set inside the
+	// native handler, which hasn't run yet at capture time, so arm copyOnSelect and
+	// let SetMovedFunc copy once the selection lands.
 	view.SetMouseCapture(func(action tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
-		// Only intercept while read-only. When editing, let the normal handler run
-		// so a click can place the cursor / select text.
-		if p.editing {
-			return action, event
-		}
-		if (action == tview.MouseLeftDown || action == tview.MouseLeftClick) && p.setFocus != nil {
-			p.setFocus(p.view)
-			return tview.MouseConsumed, nil
+		switch action {
+		case tview.MouseLeftUp:
+			if sel, _, _ := p.view.GetSelection(); sel != "" && p.onCopy != nil {
+				p.onCopy(sel)
+			}
+		case tview.MouseLeftDoubleClick:
+			p.copyOnSelect = true
 		}
 		return action, event
+	})
+	view.SetMovedFunc(func() {
+		if !p.copyOnSelect {
+			return
+		}
+		p.copyOnSelect = false
+		if sel, _, _ := p.view.GetSelection(); sel != "" && p.onCopy != nil {
+			p.onCopy(sel)
+		}
 	})
 	flex := tview.NewFlex().
 		SetDirection(tview.FlexRow).
@@ -163,7 +192,6 @@ func (p *TextPreview) enterEdit() {
 		return
 	}
 	p.editing = true
-	p.view.SetDisabled(false)
 	p.refreshButtons()
 	if p.setFocus != nil {
 		p.setFocus(p.view)
@@ -177,7 +205,6 @@ func (p *TextPreview) exitEdit() {
 		return
 	}
 	p.editing = false
-	p.view.SetDisabled(true)
 	p.refreshButtons()
 }
 
@@ -188,7 +215,6 @@ func (p *TextPreview) commitEdit() {
 		return
 	}
 	p.editing = false
-	p.view.SetDisabled(true)
 	p.oldText = p.view.GetText()
 	p.refreshButtons()
 }
@@ -199,7 +225,6 @@ func (p *TextPreview) commitEdit() {
 func (p *TextPreview) ShowSaveGrid(editable bool) {
 	p.editable = editable
 	p.editing = false
-	p.view.SetDisabled(true)
 	p.refreshButtons()
 }
 
@@ -222,11 +247,28 @@ func (p *TextPreview) refreshButtons() {
 	}
 }
 
+// isReadOnlyTextKey reports whether a key event is safe to pass to the TextArea
+// while it is read-only: cursor movement, selection (shift+movement carries the
+// same key codes) and the native copy shortcut. Everything else (rune input,
+// Enter, Backspace, Delete, cut, paste, undo/redo) is swallowed by the caller so
+// the displayed value can't be modified.
+func isReadOnlyTextKey(event *tcell.EventKey) bool {
+	switch event.Key() {
+	case tcell.KeyUp, tcell.KeyDown, tcell.KeyLeft, tcell.KeyRight,
+		tcell.KeyHome, tcell.KeyEnd, tcell.KeyPgUp, tcell.KeyPgDn,
+		tcell.KeyCtrlA, tcell.KeyCtrlE, tcell.KeyCtrlQ:
+		return true
+	}
+	return false
+}
+
 func (p *TextPreview) SetSaveHandler(f func(string, string)) {
 	p.onSave = f
 }
 
-// SetClipboardHandler wires the Copy button to a system-clipboard writer.
+// SetClipboardHandler wires the Copy button, the selection-release auto-copy and
+// the TextArea's native copy shortcut (Ctrl-Q) to a system-clipboard writer.
 func (p *TextPreview) SetClipboardHandler(f func(text string)) {
 	p.onCopy = f
+	p.view.SetClipboard(f, func() string { return "" })
 }

@@ -64,3 +64,13 @@ var (
 	ThemeBtnDangerFG      = tcell.GetColor("#f5c2c2")
 	ThemeBtnDangerHoverBG = tcell.GetColor("#8b3a3a")
 )
+
+// Bottom tab strip (CONSOLE / redis-cli): the active tab reads as a solid
+// selected chip in the same blue as ThemeSelectBG, inactive tabs as dim text.
+// These are tview color-tag strings (not tcell.Color) so they can be written
+// directly into the TextView markup, replacing tview's reverse-video highlight.
+const (
+	tabActiveBG   = "#2f5d8a" // matches ThemeSelectBG
+	tabActiveFG   = "white"
+	tabInactiveFG = "#7c8597"
+)

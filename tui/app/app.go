@@ -12,10 +12,9 @@ import (
 	"github.com/liwnn/redisterm/datasource"
 	"github.com/liwnn/redisterm/datasource/mongo"
 	"github.com/liwnn/redisterm/datasource/mysql"
-	"github.com/liwnn/redisterm/datasource/redisapi"
+	"github.com/liwnn/redisterm/datasource/redis"
 	"github.com/liwnn/redisterm/datasource/zookeeper"
 	"github.com/liwnn/redisterm/tlog"
-	"github.com/liwnn/redisterm/tui/model"
 	"github.com/liwnn/redisterm/tui/view"
 
 	"github.com/gdamore/tcell/v2"
@@ -352,10 +351,12 @@ func (a *App) onSearchChanged(term string) {
 	})
 }
 
-// toggleFocus moves keyboard focus between the key tree, the optional query box
-// and the table preview so the user can reach table cells to edit them or type a
-// query. It reports whether it acted; when focus is elsewhere (e.g. a form), it
-// returns false so Tab passes through.
+// toggleFocus cycles keyboard focus through the visible panels in a fixed ring:
+// key tree → optional query box → table/text preview → bottom panel (CONSOLE /
+// redis-cli) → back to the tree. This lets the user reach table cells to edit
+// them, type a query, and read or copy from the console without the mouse. It
+// reports whether it acted; when focus is elsewhere (e.g. a form), it returns
+// false so Tab passes through.
 func (a *App) toggleFocus() bool {
 	if a.tree == nil {
 		return false
@@ -364,42 +365,33 @@ func (a *App) toggleFocus() bool {
 	if preview == nil {
 		return false
 	}
-	tree := a.tree.TreeView()
-	hasQuery := preview.IsQueryShown()
-	hasTable := preview.IsTableShown()
-	hasText := preview.IsTextShown()
-	if !hasQuery && !hasTable && !hasText {
-		return false
-	}
-	focused := a.main.GetFocus()
-	query := preview.QueryPrimitive()
-	table := preview.TablePrimitive()
-	text := preview.TextPrimitive()
 
-	switch focused {
-	case tree:
-		if hasQuery {
-			a.main.SetFocus(query)
-		} else if hasTable {
-			a.main.SetFocus(table)
-		} else {
-			a.main.SetFocus(text)
-		}
-		return true
-	case query:
-		if hasTable {
-			a.main.SetFocus(table)
-		} else {
-			a.main.SetFocus(tree)
-		}
-		return true
-	case table:
-		a.main.SetFocus(tree)
-		return true
-	case text:
-		a.main.SetFocus(tree)
-		return true
+	// Build the focus ring in order. The tree and bottom panel are always present;
+	// the query box and the table/text preview are added only when shown.
+	ring := []tview.Primitive{a.tree.TreeView()}
+	if preview.IsQueryShown() {
+		ring = append(ring, preview.QueryPrimitive())
 	}
+	if preview.IsTableShown() {
+		ring = append(ring, preview.TablePrimitive())
+	} else if preview.IsTextShown() {
+		ring = append(ring, preview.TextPrimitive())
+	}
+	ring = append(ring, a.main.BottomPanelPrimitive())
+
+	// Match by HasFocus() rather than comparing GetFocus() pointers: a mouse click
+	// focuses the embedded primitive (e.g. the inner *tview.TreeView), a different
+	// pointer than the wrapper in the ring, so strict equality would miss it and
+	// Tab would appear to stop working after a click.
+	for i, p := range ring {
+		if p.HasFocus() {
+			a.main.SetFocus(ring[(i+1)%len(ring)])
+			return true
+		}
+	}
+	// Focus is on none of the ring members (e.g. a form, the search box or the
+	// connection dropdown holds focus): don't act, so Tab keeps its normal meaning
+	// there.
 	return false
 }
 
@@ -535,13 +527,13 @@ func (a *App) deleteConn(index int) {
 
 // settingToConfig converts a connection-setting form value into a stored config.
 // Redis keeps an empty Kind for backward compatibility (configs predate the field).
-func settingToConfig(s view.Setting) redisapi.RedisConfig {
+func settingToConfig(s view.Setting) config.Conn {
 	port, _ := strconv.Atoi(s.Port)
 	kind := s.Kind
 	if kind == "redis" {
 		kind = ""
 	}
-	return redisapi.RedisConfig{
+	return config.Conn{
 		Name: s.Name,
 		Host: s.Host,
 		Port: port,
@@ -555,7 +547,7 @@ func settingToConfig(s view.Setting) redisapi.RedisConfig {
 
 // probeConn opens a throwaway connection to verify the config is reachable, then
 // closes it. Returns nil on success. Used by the setting form's Test button.
-func probeConn(conf redisapi.RedisConfig) error {
+func probeConn(conf config.Conn) error {
 	switch conf.Kind {
 	case "mongo":
 		src := mongo.NewMongoSource(conf.MongoURI())
@@ -576,46 +568,44 @@ func probeConn(conf redisapi.RedisConfig) error {
 		}
 		src.Close()
 	default: // redis
-		data := model.NewData(fmt.Sprintf("%v:%v", conf.Host, conf.Port), conf.Auth)
-		if err := data.Connect(); err != nil {
+		src := redis.NewRedisSource(fmt.Sprintf("%v:%v", conf.Host, conf.Port), conf.Auth)
+		if err := src.Open(); err != nil {
 			return err
 		}
-		data.Close()
+		src.Close()
 	}
 	return nil
 }
 
-// newRedisTree builds the redis-backed tree (db0..dbN > keys). The connection is
-// not opened here; Show calls Connect() asynchronously.
-func (a *App) newRedisTree(conf redisapi.RedisConfig) treeController {
+// newRedisTree builds the redis-backed tree (db0..dbN > keys split into a ':'
+// prefix tree). The connection is not opened here; Show calls Connect()
+// asynchronously.
+func (a *App) newRedisTree(conf config.Conn) treeController {
 	address := fmt.Sprintf("%v:%v", conf.Host, conf.Port)
-	tree := view.NewTree("db")
-	tree.GetRoot().SetReference(&Reference{Name: "db"})
-	preview := view.NewPreview()
-
-	t := NewDBTree(tree, preview)
-	t.ShowModalOK = a.main.ShowModalOK
+	t := NewDSTree(conf.Name, redis.NewRedisSource(address, conf.Auth))
+	t.SetKeyTree(":")
+	t.SetQueueUpdate(func(fn func()) { a.main.QueueUpdateDraw(fn) })
+	t.preview.SetTableFocusFunc(a.focus)
+	t.preview.SetTextFocusFunc(a.focus)
+	t.preview.SetClipboardFunc(a.main.Clipboard)
 	t.ShowModal = a.main.ShowModal
-	preview.SetTableFocusFunc(a.focus)
-	preview.SetTextFocusFunc(a.focus)
-	preview.SetClipboardFunc(a.main.Clipboard)
-	t.SetData(address, model.NewData(address, conf.Auth))
+	t.ShowModalOK = a.main.ShowModalOK
 	return t
 }
 
 // newMongoTree builds the mongo-backed read-only tree (database > collection > docs).
-func (a *App) newMongoTree(conf redisapi.RedisConfig) treeController {
+func (a *App) newMongoTree(conf config.Conn) treeController {
 	return a.newDSTree(conf.Name, mongo.NewMongoSource(conf.MongoURI()))
 }
 
 // newMySQLTree builds the mysql-backed tree (database > table > rows).
-func (a *App) newMySQLTree(conf redisapi.RedisConfig) treeController {
+func (a *App) newMySQLTree(conf config.Conn) treeController {
 	return a.newDSTree(conf.Name, mysql.NewMySQLSource(conf.Host, conf.Port, conf.User, conf.Auth))
 }
 
 // newZKTree builds the zookeeper-backed tree. Znode paths nest into a folder
 // tree split on "/", mirroring the redis key tree.
-func (a *App) newZKTree(conf redisapi.RedisConfig) treeController {
+func (a *App) newZKTree(conf config.Conn) treeController {
 	t := NewDSTree(conf.Name, zookeeper.NewZKSource(conf.Host, conf.Port))
 	t.SetNested("/", "znode", "znode")
 	t.preview.SetTableFocusFunc(a.focus)
@@ -627,11 +617,14 @@ func (a *App) newZKTree(conf redisapi.RedisConfig) treeController {
 }
 
 // newDSTree wraps a datasource in a DSTree and wires the shared UI callbacks.
+// Used by the query-capable backends (mongo / mysql), so it also enables the
+// Query filter box; redis and zookeeper build DSTree directly without it.
 func (a *App) newDSTree(name string, src datasource.Datasource) treeController {
 	t := NewDSTree(name, src)
 	t.preview.SetTableFocusFunc(a.focus)
 	t.preview.SetTextFocusFunc(a.focus)
 	t.preview.SetClipboardFunc(a.main.Clipboard)
+	t.preview.SetQueryFunc(t.runQuery)
 	t.ShowModal = a.main.ShowModal
 	t.ShowModalOK = a.main.ShowModalOK
 	return t

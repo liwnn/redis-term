@@ -137,7 +137,13 @@
 </main>
 <script>
 const $ = id => document.getElementById(id);
+// activeKey is the highlighted tree row for NON-virtualized backends (zk/mongo/
+// mysql), whose rows are never recycled, so a live DOM reference is safe.
 let activeKey = null;
+// activeKeyStr is the highlighted redis key for the VIRTUALIZED tree, where rows
+// are recycled on scroll — a DOM reference would dangle, so we track the key and
+// re-apply the .active class whenever a row for it is (re)rendered.
+let activeKeyStr = null;
 let currentContainer = ''; // container of the last selected entry, for content/cmd
 let currentEntry = '';     // last selected entry, to detect entry switches
 let currentQuery = '';     // mongo filter typed in the query box (per entry)
@@ -245,6 +251,160 @@ function buildTree(keys) {
   }
   return root;
 }
+
+// ---- Virtual-scrolled redis key tree --------------------------------------
+// A redis db can hold millions of keys. Building one DOM node per tree node
+// freezes the browser, so the ':'-split tree lives as an in-memory MODEL and
+// only the rows visible in the #keys scroll viewport are rendered — mirroring
+// the TUI, where tview paints only the on-screen rows. Other backends keep
+// their plain rendering; their entry lists are small.
+
+const OVERSCAN = 8; // rows rendered above/below the viewport to hide scroll seams
+
+// activeScrollers holds every mounted virtual tree so the single #keys scroll
+// listener can refresh each one's window; cleared when the tree is rebuilt.
+let activeScrollers = [];
+
+// buildTreeModel builds the ':'-split tree (see buildTree) for virtualization.
+// Children are sorted and given parent/depth/collapsed LAZILY (see ensureKids)
+// rather than up front: a 2M-key db has millions of nodes, and eagerly sorting
+// every folder — most of which start collapsed and never render — is the bulk of
+// the load stall. allExpanded=true (search) opens folders as they're walked.
+function buildTreeModel(keys, allExpanded) {
+  const root = buildTree(keys);
+  root.depth = 1;               // entries (root's children) render at depth 2
+  root.allExpanded = !!allExpanded;
+  return root;
+}
+
+// ensureKids lazily materializes node.kids: the name-sorted child array, with
+// each child's parent/depth set and folders' collapsed flag initialized. Cheap
+// to call repeatedly (memoized on node.kids), so flatten can call it per visit.
+function ensureKids(node, allExpanded) {
+  if (node.kids) return node.kids;
+  const kids = [...node.children.values()].sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+  const childDepth = (node.depth || 1) + 1;
+  for (const c of kids) {
+    c.parent = node;
+    c.depth = childDepth;
+    if (c.children.size > 0) c.collapsed = !allExpanded;
+  }
+  node.kids = kids;
+  return kids;
+}
+
+// flattenTree walks the model depth-first, skipping the children of collapsed
+// folders, to produce the ordered list of currently-visible rows. It sorts only
+// the folders it actually descends into (via ensureKids), so a collapsed tree
+// costs one top-level sort instead of a full-tree sort.
+function flattenTree(root) {
+  const out = [];
+  const walk = node => {
+    for (const c of ensureKids(node, root.allExpanded)) {
+      out.push(c);
+      if (c.children.size > 0 && !c.collapsed) walk(c);
+    }
+  };
+  walk(root);
+  return out;
+}
+
+// buildVirtualRow renders one model node into a tree row. Folders toggle their
+// collapsed flag and reflow; leaves load content. The node key is stashed on the
+// element (_key/_leaf) so active-highlight updates need no DOM query/escaping.
+function buildVirtualRow(node, container, reflow) {
+  const isFolder = node.children.size > 0;
+  const closed = isFolder && node.collapsed;
+  const { row } = makeRow(node.depth, isFolder ? (closed ? '▸' : '▾') : '·',
+    node.name, isFolder, isFolder ? node.count : undefined);
+  row.title = node.key;
+  row._key = node.key;
+  row._leaf = !isFolder;
+  if (!isFolder && activeKeyStr != null && node.key === activeKeyStr) row.classList.add('active');
+  if (isFolder) {
+    row.onclick = e => { e.stopPropagation(); node.collapsed = !node.collapsed; reflow(); };
+  } else {
+    row.onclick = e => { e.stopPropagation(); loadContent(container, node.key, node.key, true); };
+  }
+  return row;
+}
+
+// mountVirtualTree replaces box's contents with a virtual scroller over root's
+// visible rows. A spacer-sized box reserves the full scroll height; an absolutely
+// positioned viewport, translated to the window start, holds only the rendered
+// slice. Registered globally so the shared #keys scroll listener drives it.
+function mountVirtualTree(box, root, container) {
+  box.style.position = 'relative';
+  box.innerHTML = '';
+  const viewport = document.createElement('div');
+  viewport.style.cssText = 'position:absolute; left:0; right:0; top:0;';
+  box.appendChild(viewport);
+
+  // rowH starts at a guess and is CALIBRATED from the first real rendered row's
+  // measured height (line-height alone misses font/zoom/devicePixelRatio
+  // effects). A wrong rowH mis-sizes the spacer so the absolute viewport overflows
+  // onto the next db; calibrating from actual DOM makes spacer and content agree.
+  const state = { box, viewport, rows: [], rowH: 20 };
+
+  const render = () => {
+    // A collapsed db (or hidden by search) has no offsetParent; render nothing
+    // and keep the DOM empty so off-screen trees cost no rows.
+    if (box.offsetParent === null) { viewport.innerHTML = ''; return; }
+    const rows = state.rows, rowH = state.rowH;
+    const keys = $('keys');
+    const kr = keys.getBoundingClientRect();
+    const br = box.getBoundingClientRect();
+    // Box-local pixel span intersecting the scroll viewport.
+    const topLocal = Math.max(0, kr.top - br.top);
+    const botLocal = Math.max(0, kr.bottom - br.top);
+    let start = Math.max(0, Math.floor(topLocal / rowH) - OVERSCAN);
+    let end = Math.min(rows.length, Math.ceil(botLocal / rowH) + OVERSCAN);
+    viewport.style.transform = `translateY(${start * rowH}px)`;
+    viewport.innerHTML = '';
+    for (let i = start; i < end; i++) {
+      viewport.appendChild(buildVirtualRow(rows[i], container, reflow));
+    }
+    // Calibrate rowH from the first painted row, then re-lay if it disagrees with
+    // the assumed height (one extra pass, only when the guess was wrong).
+    if (viewport.firstChild) {
+      const real = viewport.firstChild.getBoundingClientRect().height;
+      if (real > 0 && Math.abs(real - rowH) > 0.5) {
+        state.rowH = real;
+        box.style.height = (rows.length * real) + 'px';
+        render();
+      }
+    }
+  };
+
+  const reflow = () => {
+    state.rows = flattenTree(root);
+    box.style.height = (state.rows.length * state.rowH) + 'px';
+    render();
+  };
+
+  state.render = render;
+  box._scroller = state;
+  activeScrollers.push(state);
+  reflow();
+  return state;
+}
+
+// scheduleScrollerRender rAF-throttles window recomputation: scroll fires far
+// faster than we need to repaint, so coalesce bursts into one frame.
+let scrollerFrame = 0;
+function scheduleScrollerRender() {
+  if (scrollerFrame) return;
+  scrollerFrame = requestAnimationFrame(() => {
+    scrollerFrame = 0;
+    for (const s of activeScrollers) s.render();
+  });
+}
+
+// Drive every mounted virtual tree from the single #keys scroll container. The
+// listener is attached once; per-db scrollers register/unregister in
+// activeScrollers. A resize can change the viewport height, so refresh on that too.
+$('keys').addEventListener('scroll', scheduleScrollerRender, { passive: true });
+window.addEventListener('resize', scheduleScrollerRender);
 
 // buildZKTree nests znode paths (split on '/') under a container root path.
 // Unlike redis keys, every node is a real znode with its own data, so the
@@ -451,10 +611,23 @@ async function dropDatabase(container, row, kids) {
   $('meta').style.display = 'none';
 }
 
+// teardownScroller unregisters and detaches any virtual scroller previously
+// mounted in box, so re-rendering a redis db (reload, search) doesn't leak the
+// stale scroller into the shared #keys scroll listener.
+function teardownScroller(box) {
+  if (!box._scroller) return;
+  activeScrollers = activeScrollers.filter(s => s !== box._scroller);
+  box._scroller = null;
+  box.style.height = '';
+  box.style.position = '';
+}
+
 // renderEntries paints a container's already-fetched entry list into box. When
-// expand is true (active search) nested zookeeper folders start open so deep
-// matches are visible instead of being hidden under collapsed parents.
+// expand is true (active search) nested folders start open so deep matches are
+// visible instead of being hidden under collapsed parents. The redis ':'-tree is
+// virtual-scrolled (only visible rows hit the DOM); other backends render plainly.
 function renderEntries(container, box, entries, expand) {
+  teardownScroller(box);
   box.innerHTML = '';
   if (!entries.length) { box.innerHTML = '<div class="empty" style="padding:4px 10px">empty</div>'; return; }
   if (connKind() === 'zookeeper') {
@@ -464,7 +637,9 @@ function renderEntries(container, box, entries, expand) {
   } else if (isRelational()) {
     box.appendChild(renderFlatEntries(entries, container));
   } else {
-    box.appendChild(renderEntryNode(buildTree(entries), 2, container));
+    // redis prefix-folders start collapsed so expanding a db shows only its
+    // direct children; during a search (expand) they open so nested hits show.
+    mountVirtualTree(box, buildTreeModel(entries, !!expand), container);
   }
 }
 
@@ -472,7 +647,7 @@ function renderEntries(container, box, entries, expand) {
 async function loadEntries(container, box, tw, quiet, expand) {
   // quiet (live search re-filter) keeps the old list in place until the new one
   // arrives, so the tree doesn't flash a short "loading…" line and shift.
-  if (!quiet) box.innerHTML = '<div class="empty" style="padding:4px 10px">loading…</div>';
+  if (!quiet) { teardownScroller(box); box.innerHTML = '<div class="empty" style="padding:4px 10px">loading…</div>'; }
   const match = $('match').value || '*';
   try {
     const r = await fetch(`/api/entries?${params(container)}&match=${encodeURIComponent(match)}`);
@@ -485,8 +660,12 @@ async function loadEntries(container, box, tw, quiet, expand) {
 // loadKeys builds the server > container tree; entries load lazily on expand.
 async function loadKeys() {
   const box = $('keys');
+  // Rebuilding #keys orphans every mounted scroller; drop them so the shared
+  // scroll listener doesn't touch detached boxes.
+  activeScrollers = [];
   box.innerHTML = '<div class="empty">loading…</div>';
   activeKey = null;
+  activeKeyStr = null;
   // The bottom command bar is redis-only now; mongo/mysql use the single Query
   // box above the table (which also runs non-table commands).
   $('cmdbar').style.display = isRelational() ? 'none' : '';
@@ -520,6 +699,9 @@ async function loadKeys() {
         const open = kids.classList.toggle('collapsed') === false;
         tw.textContent = open ? '▾' : '▸';
         if (open && !loaded) { loaded = true; loadEntries(container, kids, tw); }
+        // Re-expanding a redis db reveals a box whose virtual viewport was emptied
+        // while hidden; repaint its window now instead of waiting for a scroll.
+        else if (open && kids._scroller) scheduleScrollerRender();
       };
       row.onclick = e => { e.stopPropagation(); toggleKids(); };
       if (connKind() === 'zookeeper') {
@@ -938,7 +1120,7 @@ async function runQueryBox(raw) {
   if (isTableQuery(q)) {
     if (out) out.style.display = 'none';
     currentQuery = q;
-    loadContent(pendingCtx.container, pendingCtx.entry, activeKey);
+    loadContent(pendingCtx.container, pendingCtx.entry, currentSel());
     return;
   }
   if (!out) return;
@@ -980,7 +1162,7 @@ function buildToolbar() {
   const rollback = document.createElement('button');
   rollback.textContent = 'Rollback';
   rollback.style.cssText = 'background:#3a3d41; color:#ddd; border:none; padding:4px 12px; border-radius:3px; cursor:pointer; font:inherit;';
-  rollback.onclick = () => loadContent(pendingCtx.container, pendingCtx.entry, activeKey);
+  rollback.onclick = () => loadContent(pendingCtx.container, pendingCtx.entry, currentSel());
   const del = document.createElement('button');
   del.id = 'editdelete';
   del.style.cssText = 'display:none; background:#a1260d; color:#fff; border:none; padding:4px 12px; border-radius:3px; cursor:pointer; font:inherit;';
@@ -1075,7 +1257,7 @@ async function commitPending() {
     const j = await r.json();
     if (j.error) { alert('Commit failed: ' + j.error); return; }
   }
-  loadContent(pendingCtx.container, pendingCtx.entry, activeKey);
+  loadContent(pendingCtx.container, pendingCtx.entry, currentSel());
 }
 
 // deleteSelectedRows POSTs the ticked rows to /api/deleterows, then refreshes.
@@ -1095,18 +1277,44 @@ async function deleteSelectedRows() {
   });
   const j = await r.json();
   if (j.error) { alert('Delete failed: ' + j.error); return; }
-  loadContent(pendingCtx.container, pendingCtx.entry, activeKey);
+  loadContent(pendingCtx.container, pendingCtx.entry, currentSel());
 }
 
-async function loadContent(container, entry, el, fromTree) {
+// markActiveRows re-applies the .active class to whichever currently-rendered
+// virtual rows match activeKeyStr (and clears it from the rest). Called after
+// every window render so the highlight follows the selected key as rows recycle.
+// currentSel returns the selector to re-pass to loadContent on a reload (commit /
+// rollback / query re-run): the redis key string if the virtual tree holds the
+// selection, else the live DOM row for other backends.
+function currentSel() { return activeKeyStr != null ? activeKeyStr : activeKey; }
+
+function markActiveRows() {
+  for (const s of activeScrollers) {
+    for (const row of s.viewport.children) {
+      if (row._leaf) row.classList.toggle('active', row._key === activeKeyStr);
+    }
+  }
+}
+
+// loadContent loads an entry into the right pane and moves the tree highlight.
+// `sel` identifies the clicked row: a key STRING for the virtualized redis tree
+// (rows recycle, so we track the key), or a DOM ELEMENT for other backends.
+async function loadContent(container, entry, sel, fromTree) {
   currentContainer = container;
   // Clear the query filter when switching to a different entry, or whenever the
   // user (re)clicks a tree node — even the current one — so a tree click always
   // resets to the default statement. Re-runs from the query box / commit /
   // rollback pass fromTree=false and keep the user's typed statement.
   if (fromTree || entry !== currentEntry) { currentQuery = ''; currentEntry = entry; }
-  if (activeKey) activeKey.classList.remove('active');
-  if (el) { el.classList.add('active'); activeKey = el; }
+  if (activeKey) { activeKey.classList.remove('active'); activeKey = null; }
+  if (typeof sel === 'string') {
+    activeKeyStr = sel;
+    markActiveRows();
+  } else if (sel) {
+    activeKeyStr = null;
+    sel.classList.add('active');
+    activeKey = sel;
+  }
   let url = `/api/content?${params(container)}&entry=${encodeURIComponent(entry)}`;
   if (currentQuery) url += `&query=${encodeURIComponent(currentQuery)}`;
   const r = await fetch(url);
@@ -1304,6 +1512,7 @@ async function applySearch() {
     } catch (e) { /* leave entries empty on error */ }
     const nameMatch = container.toLowerCase().includes(term);
     if (entries.length === 0 && !nameMatch) {
+      teardownScroller(kids);
       row.style.display = 'none';
       kids.style.display = 'none';
       continue;

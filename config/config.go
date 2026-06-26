@@ -5,20 +5,18 @@ import (
 	"fmt"
 	"os"
 	"strings"
-
-	"github.com/liwnn/redisterm/datasource/redisapi"
 )
 
 // file is the on-disk JSON shape: a connections list plus the name of the
 // connection selected last run, so the next launch can restore it.
 type file struct {
-	Connections  []redisapi.RedisConfig `json:"connections"`
+	Connections  []Conn `json:"connections"`
 	LastSelected string                 `json:"lastSelected,omitempty"`
 }
 
 type Config struct {
 	filename     string
-	configs      []redisapi.RedisConfig
+	configs      []Conn
 	lastSelected string // name of the last-selected connection
 }
 
@@ -29,7 +27,7 @@ func NewConfig(filename string) (*Config, error) {
 
 	c := &Config{
 		filename: filename,
-		configs: []redisapi.RedisConfig{
+		configs: []Conn{
 			{
 				Name: "127.0.0.1:6379",
 				Host: "127.0.0.1",
@@ -53,10 +51,10 @@ func (c *Config) load() error {
 	}
 
 	// Current format is an object {connections, lastSelected}; older files are a
-	// bare []RedisConfig array. Detect the array by its leading '[' and read it
+	// bare []Conn array. Detect the array by its leading '[' and read it
 	// for backward compatibility.
 	if trimmed := strings.TrimLeft(string(b), " \t\r\n"); strings.HasPrefix(trimmed, "[") {
-		var configs []redisapi.RedisConfig
+		var configs []Conn
 		if err := json.Unmarshal(b, &configs); err != nil {
 			return err
 		}
@@ -86,7 +84,7 @@ func (c *Config) Save() error {
 	return os.WriteFile(c.filename, b, 0666)
 }
 
-func (c *Config) GetConfig(index int) redisapi.RedisConfig {
+func (c *Config) GetConfig(index int) Conn {
 	return c.configs[index]
 }
 
@@ -154,7 +152,7 @@ func (c *Config) Count() int {
 	return len(c.configs)
 }
 
-func (c *Config) Update(conf redisapi.RedisConfig, index int) {
+func (c *Config) Update(conf Conn, index int) {
 	if index < 0 || index >= len(c.configs) {
 		c.Add(conf)
 		return
@@ -162,7 +160,7 @@ func (c *Config) Update(conf redisapi.RedisConfig, index int) {
 	c.configs[index] = conf
 }
 
-func (c *Config) Add(conf redisapi.RedisConfig) {
+func (c *Config) Add(conf Conn) {
 	c.configs = append(c.configs, conf)
 }
 

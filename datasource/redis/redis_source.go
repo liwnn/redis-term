@@ -1,13 +1,20 @@
-package datasource
+package redis
 
 import (
 	"fmt"
 	"strconv"
 	"strings"
 
-	"github.com/liwnn/redisterm/datasource/redis"
-	"github.com/liwnn/redisterm/datasource/redisapi"
+	"github.com/liwnn/redisterm/datasource"
+	"github.com/liwnn/redisterm/datasource/redis/redisapi"
+	"github.com/liwnn/redisterm/tlog"
 )
+
+// tlogger adapts the app's package-level tlog to redisapi.Logger, so the
+// reusable client logs into the TUI console without depending on tlog itself.
+type tlogger struct{}
+
+func (tlogger) Log(format string, args ...any) { tlog.Log(format, args...) }
 
 // RedisSource adapts a redis connection to the Datasource interface.
 // Containers are named "db0".."dbN"; entries are keys.
@@ -17,7 +24,7 @@ type RedisSource struct {
 	redis   *redisapi.Redis
 }
 
-var _ Datasource = (*RedisSource)(nil)
+var _ datasource.Datasource = (*RedisSource)(nil)
 
 // NewRedisSource new
 func NewRedisSource(address, auth string) *RedisSource {
@@ -25,7 +32,7 @@ func NewRedisSource(address, auth string) *RedisSource {
 }
 
 func (s *RedisSource) Open() error {
-	r, err := redisapi.NewRedis(s.address, s.auth)
+	r, err := redisapi.NewRedis(s.address, s.auth, tlogger{})
 	if err != nil {
 		return err
 	}
@@ -67,45 +74,82 @@ func (s *RedisSource) Containers() ([]string, error) {
 }
 
 func (s *RedisSource) Entries(container string) ([]string, error) {
+	// Preallocate to the current key count so a large keyspace doesn't repeatedly
+	// grow and copy the slice across SCAN batches. DBSIZE is O(1); if it fails we
+	// just start from nil and let append grow as before.
+	var keys []string
 	if err := s.selectDB(container); err != nil {
 		return nil, err
 	}
-	var keys []string
-	cursor := "0"
-	for {
-		next, batch, err := s.redis.Scan(cursor, "*", 1000)
-		if err != nil {
-			return nil, err
-		}
+	if n, err := s.redis.DBSize(); err == nil && n > 0 {
+		keys = make([]string, 0, n)
+	}
+	err := s.scan(func(batch []string) bool {
 		keys = append(keys, batch...)
-		cursor = next
-		if cursor == "0" {
-			break
-		}
+		return true
+	})
+	if err != nil {
+		return nil, err
 	}
 	return keys, nil
 }
 
-func (s *RedisSource) Content(container, entry string, _ Page) (Content, error) {
+// EntriesStream SCANs container's keys and invokes fn once per SCAN batch as the
+// batches arrive, so a huge keyspace can be consumed (built into the tree,
+// rendered) incrementally instead of waiting for the full key list. fn returning
+// false stops the scan early. The caller must not run other commands on this
+// source's connection while the scan is in flight: the client is a single
+// unsynchronized net.Conn and SELECT is connection state.
+func (s *RedisSource) EntriesStream(container string, fn func(batch []string) bool) error {
 	if err := s.selectDB(container); err != nil {
-		return Content{}, err
+		return err
+	}
+	return s.scan(fn)
+}
+
+// scan runs the SCAN cursor loop, handing each non-empty batch to fn. It assumes
+// the target db is already selected.
+func (s *RedisSource) scan(fn func(batch []string) bool) error {
+	cursor := "0"
+	for {
+		next, batch, err := s.redis.Scan(cursor, "*", 10000)
+		if err != nil {
+			return err
+		}
+		if len(batch) > 0 && !fn(batch) {
+			return nil
+		}
+		cursor = next
+		if cursor == "0" {
+			return nil
+		}
+	}
+}
+
+func (s *RedisSource) Content(container, entry string, _ datasource.Page) (datasource.Content, error) {
+	if err := s.selectDB(container); err != nil {
+		return datasource.Content{}, err
 	}
 	t := s.redis.Type(entry)
-	c := Content{Type: t}
+	c := datasource.Content{Type: t}
 	switch t {
 	case "string":
 		b, err := s.redis.GetByte(entry)
 		if err != nil {
-			c.Kind = KindText
+			c.Kind = datasource.KindText
 			c.Text = ""
 			return c, nil
 		}
-		c.Kind = KindText
-		c.Text = string(b)
+		c.Kind = datasource.KindText
+		if IsText(b) {
+			c.Text = string(b)
+		} else {
+			c.Text = EncodeToHexString(b)
+		}
 		c.Total = 1
 	case "hash":
 		h := s.redis.GetHash(entry)
-		c.Kind = KindTable
+		c.Kind = datasource.KindTable
 		c.Columns = []string{"key", "value"}
 		c.Rows = make([][]string, 0, len(h))
 		for _, kv := range h {
@@ -114,7 +158,7 @@ func (s *RedisSource) Content(container, entry string, _ Page) (Content, error) 
 		c.Total = len(h)
 	case "zset":
 		z := s.redis.ZRange(entry, 0, -1)
-		c.Kind = KindTable
+		c.Kind = datasource.KindTable
 		c.Columns = []string{"member", "score"}
 		c.Rows = make([][]string, 0, len(z))
 		for _, kv := range z {
@@ -123,7 +167,7 @@ func (s *RedisSource) Content(container, entry string, _ Page) (Content, error) 
 		c.Total = len(z)
 	case "set":
 		members := s.redis.GetSet(entry)
-		c.Kind = KindTable
+		c.Kind = datasource.KindTable
 		c.Columns = []string{"value"}
 		c.Rows = make([][]string, 0, len(members))
 		for _, v := range members {
@@ -132,7 +176,7 @@ func (s *RedisSource) Content(container, entry string, _ Page) (Content, error) 
 		c.Total = len(members)
 	case "list":
 		items := s.redis.GetList(entry)
-		c.Kind = KindTable
+		c.Kind = datasource.KindTable
 		c.Columns = []string{"value"}
 		c.Rows = make([][]string, 0, len(items))
 		for _, v := range items {
@@ -141,7 +185,7 @@ func (s *RedisSource) Content(container, entry string, _ Page) (Content, error) 
 		c.Total = len(items)
 	case "stream":
 		entries := s.redis.GetStreamEntries(entry)
-		c.Kind = KindTable
+		c.Kind = datasource.KindTable
 		// Columns are the entry ID plus the union of all field names, in first-seen
 		// order, so heterogeneous stream entries still line up by field.
 		fieldCols := make([]string, 0)
@@ -166,9 +210,9 @@ func (s *RedisSource) Content(container, entry string, _ Page) (Content, error) 
 		}
 		c.Total = len(entries)
 	case "none":
-		return Content{}, fmt.Errorf("key not found")
+		return datasource.Content{}, fmt.Errorf("key not found")
 	default:
-		c.Kind = KindText
+		c.Kind = datasource.KindText
 		c.Text = fmt.Sprintf("%v not implemented", t)
 	}
 	return c, nil
@@ -176,7 +220,7 @@ func (s *RedisSource) Content(container, entry string, _ Page) (Content, error) 
 
 // Update writes a single table cell change back to redis, dispatching by the
 // entry's type. OldRow holds the row's original cells (field/value, member/score, ...).
-func (s *RedisSource) Update(container, entry string, e Edit) error {
+func (s *RedisSource) Update(container, entry string, e datasource.Edit) error {
 	if err := s.selectDB(container); err != nil {
 		return err
 	}
@@ -235,8 +279,16 @@ func (s *RedisSource) Update(container, entry string, e Edit) error {
 	}
 }
 
+// Rename renames a key within a db via RENAME.
+func (s *RedisSource) Rename(container, oldEntry, newEntry string) error {
+	if err := s.selectDB(container); err != nil {
+		return err
+	}
+	return s.do("RENAME", oldEntry, newEntry)
+}
+
 // DeleteRows is not supported for redis (its UI uses a different write path).
-func (s *RedisSource) DeleteRows(container, entry string, columns []string, rows []RowRef) error {
+func (s *RedisSource) DeleteRows(container, entry string, columns []string, rows []datasource.RowRef) error {
 	return fmt.Errorf("row deletion not supported")
 }
 
@@ -256,21 +308,21 @@ func (s *RedisSource) DropContainer(container string) error {
 	return s.do("FLUSHDB")
 }
 
-// do runs a redis command and turns an error reply into a Go error.
+// do runs a redis command and turns an error reply into a Go error. The reply
+// value itself is discarded; an error reply surfaces as err from Do.
 func (s *RedisSource) do(cmd string, args ...string) error {
-	reply, err := s.redis.Do(cmd, args...)
-	if err != nil {
-		return err
-	}
-	if reply.Type() == redis.Err {
-		return fmt.Errorf("%s", reply.String())
-	}
-	return nil
+	_, err := s.redis.Do(cmd, args...)
+	return err
 }
 
 func (s *RedisSource) Command(container, raw string) (string, error) {
-	if err := s.selectDB(container); err != nil {
-		return "", err
+	// An empty container means "use the connection's current db" (the redis-cli
+	// box runs against whatever SELECT the user last issued); only switch when a
+	// db is explicitly named.
+	if container != "" {
+		if err := s.selectDB(container); err != nil {
+			return "", err
+		}
 	}
 	args := strings.Fields(raw)
 	if len(args) == 0 {
@@ -283,18 +335,23 @@ func (s *RedisSource) Command(container, raw string) (string, error) {
 	return replyText(reply), nil
 }
 
-// replyText renders a redis reply as plain text lines.
-func replyText(r *redis.Reply) string {
-	switch r.Type() {
-	case redis.Nil:
+// replyText renders a Go-native reply value (from Redis.Do) as plain text lines,
+// matching redis-cli's basic output shapes.
+func replyText(v any) string {
+	switch t := v.(type) {
+	case nil:
 		return "(nil)"
-	case redis.Int:
-		v, _ := r.Int()
-		return strconv.Itoa(v)
-	case redis.Array:
-		l, _ := r.List()
-		return strings.Join(l, "\n")
+	case int:
+		return strconv.Itoa(t)
+	case string:
+		return t
+	case []any:
+		lines := make([]string, 0, len(t))
+		for _, e := range t {
+			lines = append(lines, replyText(e))
+		}
+		return strings.Join(lines, "\n")
 	default:
-		return r.String()
+		return fmt.Sprintf("%v", t)
 	}
 }

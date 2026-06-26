@@ -158,6 +158,11 @@ func findStatement(entry string, filter interface{}, limit int64) string {
 
 // Update writes a single document field change via UpdateOne matched on _id.
 // The new value is coerced to e.OldType so numeric/bool fields keep their type.
+// Rename is not supported for mongo.
+func (s *MongoSource) Rename(_, _, _ string) error {
+	return fmt.Errorf("rename not supported")
+}
+
 func (s *MongoSource) Update(container, entry string, e datasource.Edit) error {
 	if e.Column < 0 || e.Column >= len(e.Columns) {
 		return fmt.Errorf("invalid column")
