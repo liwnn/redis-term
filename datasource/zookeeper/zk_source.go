@@ -23,7 +23,10 @@ type ZKSource struct {
 	conn *zk.Conn
 }
 
-var _ datasource.Datasource = (*ZKSource)(nil)
+var (
+	_ datasource.Datasource = (*ZKSource)(nil)
+	_ datasource.Pinger     = (*ZKSource)(nil)
+)
 
 // silentLogger discards the zk client's internal logging so connection churn
 // doesn't bleed into the TUI/console.
@@ -60,6 +63,19 @@ func (s *ZKSource) Open() error {
 	}
 	conn.Close()
 	return fmt.Errorf("zookeeper: connect to %s timed out", s.addr)
+}
+
+// Ping reports whether the client currently holds a live session, so the UI can
+// show a health dot. The zk client maintains the session and auto-reconnects, so
+// this just reads the connection state rather than dialing a new connection.
+func (s *ZKSource) Ping() error {
+	if s.conn == nil {
+		return fmt.Errorf("not connected")
+	}
+	if st := s.conn.State(); st != zk.StateHasSession {
+		return fmt.Errorf("zookeeper: %s", st)
+	}
+	return nil
 }
 
 func (s *ZKSource) Close() {

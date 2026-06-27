@@ -84,3 +84,15 @@ type Datasource interface {
 	// Close releases the connection.
 	Close()
 }
+
+// Pinger is an optional capability: a backend that can cheaply verify the
+// connection is still alive. The UI polls it in the background to flip the
+// tree's connection-status glyph when the server goes away while idle. A nil
+// return means healthy; any error means the connection is considered down.
+//
+// Ping must use a connection separate from the one serving normal requests when
+// that connection is single and unsynchronized (redis), so a poll can't
+// interleave with an in-flight command.
+type Pinger interface {
+	Ping() error
+}

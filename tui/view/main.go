@@ -440,6 +440,12 @@ func (m *MainView) createBottom() tview.Primitive {
 			pages.SwitchToPage(added[0])
 			m.bottomTabs.Highlight()
 			m.renderBottomTabs(m.cliVisible)
+			// Selecting the redis-cli tab drops focus straight into the command
+			// console so the user can type a command without an extra Tab/click;
+			// the console owns char input, so focusing it == entering edit mode.
+			if added[0] == "redis-cli" && m.cmdConsole != nil {
+				m.SetFocus(m.cmdConsole)
+			}
 		})
 	info.SetBackgroundColor(ThemePanelBG)
 

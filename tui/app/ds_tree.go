@@ -294,10 +294,10 @@ func (t *DSTree) reloadNode() bool {
 		}
 		return true
 	case dsFolder:
-		// Reload a key prefix: rescan the whole db and rebuild the container, since
-		// redis SCAN can't cheaply list just one prefix's current members here.
-		// Defer to the container rebuild by walking up isn't available, so rebuild
-		// the owning db in place.
+		// Reload a key prefix: redis SCAN can't cheaply list just one prefix, so
+		// rescan the whole db to get fresh data — but rebuild ONLY this folder's
+		// subtree in place, leaving the rest of the tree (and the selection) put
+		// rather than collapsing back to the container root.
 		entries, err := t.src.Entries(ref.container)
 		if err != nil {
 			tlog.Log("[DSTree] reload entries %v", err)
@@ -306,10 +306,34 @@ func (t *DSTree) reloadNode() bool {
 			}
 			return true
 		}
-		if cNode := t.containerNode(ref.container); cNode != nil {
-			cNode.ClearChildren()
-			t.buildKeyTree(cNode, ref.container, entries)
+		// Rebuild the cached key tree from the fresh scan, then locate the DataNode
+		// for this exact prefix in it.
+		dt := NewDataTree(ref.container)
+		for _, k := range entries {
+			dt.AddKey(k)
 		}
+		t.keyTrees[ref.container] = dt
+		dn := findPrefixNode(dt, ref.name)
+		if dn == nil {
+			// Every key under this prefix was deleted since it was last shown: the
+			// folder no longer exists. Rebuild the whole container so the now-stale
+			// folder node disappears with the rest brought up to date.
+			if cNode := t.containerNode(ref.container); cNode != nil {
+				cNode.ClearChildren()
+				for _, c := range dt.GetChildren(dt.Root()) {
+					t.addKeyNode(cNode, ref.container, c)
+				}
+			}
+			return true
+		}
+		ref.node = dn // re-point the ref at the rebuilt DataNode
+		expanded := node.IsExpanded()
+		node.ClearChildren()
+		for _, c := range dn.GetChildren() {
+			t.addKeyNode(node, ref.container, c)
+		}
+		node.SetExpanded(expanded)
+		t.syncKeyFolder(node, ref)
 		return true
 	case dsEntry:
 		// Only nested folder znodes have a rebuildable subtree; leaves don't.
@@ -743,6 +767,24 @@ func (t *DSTree) addNestedChildren(parent *tview.TreeNode, parentPath string, al
 	}
 }
 
+// findPrefixNode locates the DataNode for an interior prefix key (e.g. "user:1:")
+// in a freshly built DataTree by walking the colon-delimited path from the root,
+// matching the cumulative prefix at each level the same way AddKey builds it.
+// Returns nil if the prefix no longer exists (all its keys were deleted).
+func findPrefixNode(dt *DataTree, prefixKey string) *DataNode {
+	p := dt.Root()
+	for i := 0; i < len(prefixKey); i++ {
+		if prefixKey[i] != ':' {
+			continue
+		}
+		p = p.GetChildByKey(prefixKey[:i+1])
+		if p == nil {
+			return nil
+		}
+	}
+	return p
+}
+
 // buildKeyTree splits a container's flat key list on keySep into a prefix tree
 // and materializes it under the container node. The built tree is cached per
 // container so reload/filter can rebuild from it.
@@ -1144,6 +1186,21 @@ func (t *DSTree) showContent(c datasource.Content) {
 // from a background goroutine before Expand.
 func (t *DSTree) Connect() error {
 	return t.src.Open()
+}
+
+// Pollable reports whether the backend supports background health polling.
+func (t *DSTree) Pollable() bool {
+	_, ok := t.src.(datasource.Pinger)
+	return ok
+}
+
+// Ping checks the connection is still alive, if the backend supports it. A nil
+// return means healthy (or the backend can't be polled).
+func (t *DSTree) Ping() error {
+	if p, ok := t.src.(datasource.Pinger); ok {
+		return p.Ping()
+	}
+	return nil
 }
 
 // SetConnState sets the right-aligned connection-status glyph on the root row.

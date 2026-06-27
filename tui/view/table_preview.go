@@ -512,19 +512,20 @@ func (p *TablePreview) repaintRowBG(showRow int) {
 }
 
 // onTableKey handles in-table keys: Enter edits a cell (staging it locally),
-// Ctrl-S commits all staged edits, Esc/Ctrl-R rolls them back.
+// Ctrl-S commits all staged edits, Esc rolls them back. Delete (or vim 'd')
+// removes the selected rows, matching the tree's drop binding.
 func (p *TablePreview) onTableKey(event *tcell.EventKey) *tcell.EventKey {
 	switch event.Key() {
 	case tcell.KeyCtrlS:
 		p.commit()
 		return nil
-	case tcell.KeyCtrlD:
+	case tcell.KeyDelete:
 		if p.rowSelectable && len(p.selected) > 0 {
 			p.deleteSelected()
 			return nil
 		}
 		return event
-	case tcell.KeyCtrlR, tcell.KeyEsc:
+	case tcell.KeyEsc:
 		if len(p.pending) > 0 {
 			p.rollback()
 			return nil
@@ -559,6 +560,11 @@ func (p *TablePreview) onTableKey(event *tcell.EventKey) *tcell.EventKey {
 		case ' ': // toggle row selection
 			if p.rowSelectable {
 				p.toggleSelectedRow()
+				return nil
+			}
+		case 'd': // vim alias for Delete: drop selected rows
+			if p.rowSelectable && len(p.selected) > 0 {
+				p.deleteSelected()
 				return nil
 			}
 		case '+', '=': // widen selected column
@@ -765,7 +771,7 @@ func (p *TablePreview) updateStatus() {
 		p.actionRow.AddItem(p.rollbackBtn, 12, 0, false)
 		actionWidth = 24
 	} else if n := len(p.selected); n > 0 {
-		statusText = fmt.Sprintf("[yellow]%d row(s) selected  [white]Ctrl-D[yellow]=delete", n)
+		statusText = fmt.Sprintf("[yellow]%d row(s) selected  [white]Del[yellow]=delete", n)
 		label := fmt.Sprintf("Delete selected (%d)", n)
 		p.delBtn.SetLabel(label)
 		p.actionRow.AddItem(nil, 1, 0, false)
@@ -877,7 +883,7 @@ func (p *TablePreview) EnableRowSelection(on bool) {
 }
 
 // SetDeleteRowsFunc registers the callback invoked (after confirmation) when the
-// user deletes the ticked rows with Ctrl-D. It receives sorted absolute rows.
+// user deletes the ticked rows with Delete / 'd'. It receives sorted absolute rows.
 func (p *TablePreview) SetDeleteRowsFunc(f func(absRows []int) error) {
 	p.onDeleteRows = f
 }

@@ -35,9 +35,12 @@ func (o *OpLine) init() {
 	drop.SetUseStyleTags(true) // 选项用颜色标签区分 redis/mongo/mysql(见 config.GetDbNames)
 	drop.SetLabelColor(ThemeQueryLabel)
 	drop.SetFieldTextColor(ThemeQueryFG)
-	drop.SetFieldBackgroundColor(ThemeQueryBG)
+	// The field (the closed value / top row when open) gets a lifted background so
+	// it reads as distinct from the option list below it, which shares the dark
+	// ThemeQueryBG — otherwise the current value blends into the popup.
+	drop.SetFieldBackgroundColor(ThemeDropFieldBG)
 	// 焦点命中时不要用 tview 默认的白底(太刺眼),保持暗底、只把字调亮
-	drop.SetFocusedStyle(tcell.StyleDefault.Background(ThemeQueryBG).Foreground(tcell.ColorWhite).Attributes(tcell.AttrBold))
+	drop.SetFocusedStyle(tcell.StyleDefault.Background(ThemeDropFieldBG).Foreground(tcell.ColorWhite).Attributes(tcell.AttrBold))
 	// 下拉列表:与暗色面板一致,选中项用柔和蓝色高亮
 	normal := tcell.StyleDefault.Foreground(ThemeQueryFG).Background(ThemeQueryBG)
 	selected := tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(ThemeSelectBG)
@@ -105,6 +108,32 @@ func (o *OpLine) Select(index int) {
 // switching (Ctrl-P jumps here from anywhere).
 func (o *OpLine) SelectDropPrimitive() tview.Primitive {
 	return o.selectDrop
+}
+
+// OpenSelectDrop focuses the connection dropdown and pops its option list open
+// in one step, so Ctrl-P lands the user directly in the list instead of on a
+// closed field they'd then have to press Enter to open. setFocus is the app's
+// focus setter (tview's DropDown opens its list via that callback). An Enter
+// event routed through the dropdown's own InputHandler opens the list exactly
+// the way a manual Enter would.
+func (o *OpLine) OpenSelectDrop(setFocus func(p tview.Primitive)) {
+	setFocus(o.selectDrop)
+	if h := o.selectDrop.InputHandler(); h != nil {
+		h(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone), setFocus)
+	}
+}
+
+// CloseSelectDrop collapses the dropdown's option list if it's open, without
+// changing the selection. It routes an Esc through the dropdown's own
+// InputHandler (which invokes tview's internal closeList); the caller restores
+// focus to wherever it wants afterward.
+func (o *OpLine) CloseSelectDrop() {
+	if !o.selectDrop.IsOpen() {
+		return
+	}
+	if h := o.selectDrop.InputHandler(); h != nil {
+		h(tcell.NewEventKey(tcell.KeyEsc, 0, tcell.ModNone), func(tview.Primitive) {})
+	}
 }
 
 func (o *OpLine) GetOptionCount() int {

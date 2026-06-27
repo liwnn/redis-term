@@ -92,6 +92,19 @@ func (s *Server) source(index int) (datasource.Datasource, error) {
 	return ds, nil
 }
 
+// evictSource closes and drops the cached source at index, so the next request
+// re-dials. Called when a health ping fails: the stale connection is unusable,
+// and source() rebuilds it on the next access.
+func (s *Server) evictSource(index int) {
+	cacheKey := strconv.Itoa(index)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if ds, ok := s.sources[cacheKey]; ok {
+		ds.Close()
+		delete(s.sources, cacheKey)
+	}
+}
+
 func writeJSON(w http.ResponseWriter, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(v)
@@ -271,6 +284,33 @@ func (s *Server) handleConnTest(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleSelect(w http.ResponseWriter, r *http.Request) {
 	s.cfg.SaveLastSelected(intParam(r, "conn", 0))
 	writeJSON(w, map[string]bool{"ok": true})
+}
+
+// handlePing health-checks the connection at index, mirroring the TUI's
+// background poll. It reports whether the backend supports polling (only redis
+// implements datasource.Pinger) and whether it is currently alive. On a failed
+// ping the cached source is evicted so the next data request re-dials, which is
+// also how recovery is detected (a later ping re-opens and succeeds).
+func (s *Server) handlePing(w http.ResponseWriter, r *http.Request) {
+	index := intParam(r, "conn", 0)
+	ds, err := s.source(index)
+	if err != nil {
+		// Couldn't even open the connection: treat as down (and pollable, so the
+		// UI keeps checking for recovery — only redis reaches this endpoint).
+		writeJSON(w, map[string]interface{}{"pollable": true, "alive": false, "error": err.Error()})
+		return
+	}
+	p, ok := ds.(datasource.Pinger)
+	if !ok {
+		writeJSON(w, map[string]interface{}{"pollable": false, "alive": true})
+		return
+	}
+	if err := p.Ping(); err != nil {
+		s.evictSource(index)
+		writeJSON(w, map[string]interface{}{"pollable": true, "alive": false, "error": err.Error()})
+		return
+	}
+	writeJSON(w, map[string]interface{}{"pollable": true, "alive": true})
 }
 
 // handleContainers lists the second tree level (dbs / databases).
@@ -501,6 +541,47 @@ func (s *Server) handleDrop(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]bool{"ok": true})
 }
 
+// prefixDropper is implemented by sources that can delete every entry under a
+// tree prefix in one server-side sweep (redis). The web tree's "delete folder"
+// action needs this so it never fans out a DEL-per-key from the browser.
+type prefixDropper interface {
+	DropPrefix(container, prefix string) (int, error)
+}
+
+// handleDropPrefix deletes all keys under a redis prefix folder (prefix itself
+// plus prefix:*), server-side. Only sources implementing prefixDropper support
+// it; others report unsupported.
+func (s *Server) handleDropPrefix(w http.ResponseWriter, r *http.Request) {
+	ds, err := s.source(intParam(r, "conn", 0))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	var body struct {
+		Container string `json:"container"`
+		Prefix    string `json:"prefix"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, err)
+		return
+	}
+	if body.Prefix == "" {
+		writeErr(w, fmt.Errorf("missing prefix"))
+		return
+	}
+	pd, ok := ds.(prefixDropper)
+	if !ok {
+		writeErr(w, fmt.Errorf("prefix deletion not supported"))
+		return
+	}
+	n, err := pd.DropPrefix(body.Container, body.Prefix)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, map[string]interface{}{"ok": true, "deleted": n})
+}
+
 // handleDropDB drops a container (mongo database / redis db flush).
 func (s *Server) handleDropDB(w http.ResponseWriter, r *http.Request) {
 	ds, err := s.source(intParam(r, "conn", 0))
@@ -598,12 +679,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/conn/delete", s.handleConnDelete)
 	mux.HandleFunc("/api/conn/test", s.handleConnTest)
 	mux.HandleFunc("/api/select", s.handleSelect)
+	mux.HandleFunc("/api/ping", s.handlePing)
 	mux.HandleFunc("/api/containers", s.handleContainers)
 	mux.HandleFunc("/api/entries", s.handleEntries)
 	mux.HandleFunc("/api/content", s.handleContent)
 	mux.HandleFunc("/api/update", s.handleUpdate)
 	mux.HandleFunc("/api/deleterows", s.handleDeleteRows)
 	mux.HandleFunc("/api/drop", s.handleDrop)
+	mux.HandleFunc("/api/dropprefix", s.handleDropPrefix)
 	mux.HandleFunc("/api/dropdb", s.handleDropDB)
 	mux.HandleFunc("/api/cmd", s.handleCmd)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

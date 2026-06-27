@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/liwnn/redisterm/datasource"
 	"github.com/liwnn/redisterm/datasource/redis/redisapi"
@@ -22,9 +23,20 @@ type RedisSource struct {
 	address string
 	auth    string
 	redis   *redisapi.Redis
+
+	// pingMu guards the dedicated health-check connection. The main redis
+	// connection is single and unsynchronized — a background SCAN owns it while a
+	// db loads — so polling it directly would interleave commands. Ping dials its
+	// own connection lazily and reuses it across polls.
+	pingMu     sync.Mutex
+	pingRedis  *redisapi.Redis
+	pingClosed bool
 }
 
-var _ datasource.Datasource = (*RedisSource)(nil)
+var (
+	_ datasource.Datasource = (*RedisSource)(nil)
+	_ datasource.Pinger     = (*RedisSource)(nil)
+)
 
 // NewRedisSource new
 func NewRedisSource(address, auth string) *RedisSource {
@@ -44,6 +56,39 @@ func (s *RedisSource) Close() {
 	if s.redis != nil {
 		s.redis.Close()
 	}
+	s.pingMu.Lock()
+	s.pingClosed = true
+	if s.pingRedis != nil {
+		s.pingRedis.Close()
+		s.pingRedis = nil
+	}
+	s.pingMu.Unlock()
+}
+
+// Ping checks the connection is alive over a dedicated connection (see the
+// pingMu doc). It dials on first use and reuses the connection across polls; if
+// a poll fails the connection is dropped so the next poll re-dials, which also
+// detects when the server has come back. A nil logger keeps the periodic PINGs
+// out of the console log.
+func (s *RedisSource) Ping() error {
+	s.pingMu.Lock()
+	defer s.pingMu.Unlock()
+	if s.pingClosed {
+		return fmt.Errorf("closed")
+	}
+	if s.pingRedis == nil {
+		r, err := redisapi.NewRedis(s.address, s.auth, nil)
+		if err != nil {
+			return err
+		}
+		s.pingRedis = r
+	}
+	if err := s.pingRedis.Ping(); err != nil {
+		s.pingRedis.Close()
+		s.pingRedis = nil
+		return err
+	}
+	return nil
 }
 
 // dbIndex parses "db3" -> 3.
@@ -306,6 +351,48 @@ func (s *RedisSource) DropContainer(container string) error {
 		return err
 	}
 	return s.do("FLUSHDB")
+}
+
+// DropPrefix deletes every key under a tree prefix folder: the prefix key itself
+// if it exists, plus all keys matching "prefix:*". It SCANs by an escaped glob
+// (so a prefix like "user:1" can't also sweep up "user:10") and DELs in batches
+// to keep each command bounded on a huge keyspace. Returns the number deleted.
+func (s *RedisSource) DropPrefix(container, prefix string) (int, error) {
+	if err := s.selectDB(container); err != nil {
+		return 0, err
+	}
+	pattern := globEscape(prefix) + ":*"
+	deleted := 0
+	cursor := "0"
+	for {
+		next, batch, err := s.redis.Scan(cursor, pattern, 10000)
+		if err != nil {
+			return deleted, err
+		}
+		if len(batch) > 0 {
+			if err := s.do("DEL", batch...); err != nil {
+				return deleted, err
+			}
+			deleted += len(batch)
+		}
+		cursor = next
+		if cursor == "0" {
+			break
+		}
+	}
+	// The prefix may itself be a real key (e.g. "user:1" exists alongside
+	// "user:1:name"); DEL is a no-op when it doesn't, so always try.
+	if err := s.do("DEL", prefix); err != nil {
+		return deleted, err
+	}
+	return deleted, nil
+}
+
+// globEscape backslash-escapes the redis glob metacharacters so a literal key
+// prefix is matched verbatim by SCAN MATCH.
+func globEscape(s string) string {
+	r := strings.NewReplacer(`\`, `\\`, `*`, `\*`, `?`, `\?`, `[`, `\[`, `]`, `\]`)
+	return r.Replace(s)
 }
 
 // do runs a redis command and turns an error reply into a Go error. The reply

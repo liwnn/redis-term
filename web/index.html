@@ -81,6 +81,8 @@
   .frow input, .frow select { flex: 1; background: #1e1e1e; color: #ddd; border: 1px solid #444; padding: 5px 6px; border-radius: 3px; font: inherit; }
   .frow[hidden] { display: none; }
   .modal-status { min-height: 18px; margin: 6px 0 10px; font-size: 12px; }
+  .node .conn-status { float: right; padding: 0 10px; font-size: 12px; line-height: 20px; display: none; }
+  .node .conn-status.show { display: inline; }
   .modal-btns { display: flex; gap: 8px; justify-content: flex-end; }
   .modal-btns button { background: #333; color: #ddd; border: 1px solid #444; border-radius: 3px; padding: 5px 14px; cursor: pointer; font: inherit; }
   .modal-btns button:hover { background: #0e639c; border-color: #0e639c; color: #fff; }
@@ -326,7 +328,102 @@ function buildVirtualRow(node, container, reflow) {
   } else {
     row.onclick = e => { e.stopPropagation(); loadContent(container, node.key, node.key, true); };
   }
+  // Hover "×": a leaf DELs its one key; a folder (virtual prefix) DELs every key
+  // under it (prefix:* plus an exact prefix key) in one server-side sweep.
+  row.style.position = 'relative';
+  const del = document.createElement('span');
+  del.textContent = '×';
+  del.title = isFolder ? 'Delete all keys under this prefix' : 'Delete key';
+  del.style.cssText = 'float:right; color:#d33; font-weight:bold; padding:0 8px; display:none;';
+  del.onclick = e => {
+    e.stopPropagation();
+    if (isFolder) dropRedisPrefix(container, node, reflow);
+    else dropRedisKey(container, node, reflow);
+  };
+  row.onmouseenter = () => { del.style.display = 'inline'; };
+  row.onmouseleave = () => { del.style.display = 'none'; };
+  row.appendChild(del);
   return row;
+}
+
+// removeLeafFromModel detaches a leaf from the model: every ancestor's key count
+// drops by 1 (the leaf counted toward each prefix it lived under), and any prefix
+// folder left empty is spliced out of its parent. Walks parent links to the root.
+function removeLeafFromModel(node) {
+  // Decrement the prefix count on every ancestor up to (but not including) root.
+  for (let a = node.parent; a && a.parent; a = a.parent) a.count -= 1;
+  // Detach the leaf, then unlink any ancestor that became empty.
+  let n = node;
+  while (n.parent) {
+    const p = n.parent;
+    p.children.delete(n.name);
+    if (p.kids) { const i = p.kids.indexOf(n); if (i >= 0) p.kids.splice(i, 1); }
+    if (p.children.size > 0 || !p.parent) break; // p still has siblings, or is root
+    n = p; // p emptied out — remove it from its own parent next
+  }
+}
+
+// removeSubtreeFromModel detaches a whole prefix folder: each ancestor's count
+// drops by the folder's key count, the folder is unlinked from its parent, and
+// any ancestor left empty is pruned in turn (same cascade as removeLeafFromModel).
+function removeSubtreeFromModel(node) {
+  const n = node.count; // keys living under this prefix
+  for (let a = node.parent; a && a.parent; a = a.parent) a.count -= n;
+  let cur = node;
+  while (cur.parent) {
+    const p = cur.parent;
+    p.children.delete(cur.name);
+    if (p.kids) { const i = p.kids.indexOf(cur); if (i >= 0) p.kids.splice(i, 1); }
+    if (p.children.size > 0 || !p.parent) break;
+    cur = p;
+  }
+}
+
+// subtreeHasActiveKey reports whether activeKeyStr (the key shown on the right)
+// lives under node's prefix, so a prefix delete knows to clear the pane.
+function subtreeHasActiveKey(node) {
+  return activeKeyStr != null && (activeKeyStr === node.key || activeKeyStr.startsWith(node.key + ':'));
+}
+
+// dropRedisPrefix confirms, then deletes every key under a prefix folder via the
+// server-side sweep (/api/dropprefix — never a DEL-per-key from the browser),
+// removes the subtree from the model, and reflows. node.count keys are at stake,
+// so the confirm spells out how many.
+async function dropRedisPrefix(container, node, reflow) {
+  if (!confirm(`Delete ALL ${node.count} key(s) under "${node.key}:"? This cannot be undone.`)) return;
+  const r = await fetch(`/api/dropprefix?conn=${encodeURIComponent(connSel.value)}`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ container, prefix: node.key })
+  });
+  const j = await r.json();
+  if (j.error) { alert('Delete failed: ' + j.error); return; }
+  if (subtreeHasActiveKey(node)) {
+    activeKeyStr = null;
+    $('value').innerHTML = '<div class="empty">select a key</div>';
+    $('meta').style.display = 'none';
+  }
+  removeSubtreeFromModel(node);
+  reflow();
+}
+
+// dropRedisKey confirms, DELs the key via /api/drop, then removes it from the
+// in-memory tree model and reflows the virtual list. Clears the right pane if the
+// deleted key was the one being shown.
+async function dropRedisKey(container, node, reflow) {
+  if (!confirm(`Delete key ${node.key}? This cannot be undone.`)) return;
+  const r = await fetch(`/api/drop?conn=${encodeURIComponent(connSel.value)}`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ container, entry: node.key })
+  });
+  const j = await r.json();
+  if (j.error) { alert('Delete failed: ' + j.error); return; }
+  if (activeKeyStr === node.key) {
+    activeKeyStr = null;
+    $('value').innerHTML = '<div class="empty">select a key</div>';
+    $('meta').style.display = 'none';
+  }
+  removeLeafFromModel(node);
+  reflow();
 }
 
 // mountVirtualTree replaces box's contents with a virtual scroller over root's
@@ -372,7 +469,17 @@ function mountVirtualTree(box, root, container) {
         state.rowH = real;
         box.style.height = (rows.length * real) + 'px';
         render();
+        return;
       }
+    }
+    // When the whole tree is rendered (small db: no row is virtualized away),
+    // size the box from the viewport's REAL stacked height rather than
+    // rows.length*rowH. Sub-pixel per-row rounding under display zoom/HiDPI makes
+    // the estimate drift a few px short over many rows, which would pull the next
+    // sibling (db1) up into the last key. The measured height is exact, so the
+    // sibling sits flush below the last row.
+    if (start === 0 && end === rows.length && viewport.offsetHeight > 0) {
+      box.style.height = viewport.offsetHeight + 'px';
     }
   };
 
@@ -671,13 +778,18 @@ async function loadKeys() {
   $('cmdbar').style.display = isRelational() ? 'none' : '';
   $('cmd').placeholder = 'raw redis command, e.g. GET foo';
   try {
-    const r = await fetch(`/api/containers?conn=${encodeURIComponent(connSel.value)}`);
-    const containers = await r.json();
-    if (containers.error) { box.innerHTML = `<div class="empty">${containers.error}</div>`; return; }
     box.innerHTML = '';
     const sel = conns[connSel.value];
     const server = sel ? sel.name : '';
     const { row: srow, tw: stw } = makeRow(0, '▾', server, true);
+    // Connection-status dot, right-aligned on the server (root) row, mirroring the
+    // TUI's root glyph. The poll loop updates it via connStatusEl; it survives tree
+    // rebuilds because loadKeys re-creates the row (and re-applies the last state).
+    const dot = document.createElement('span');
+    dot.className = 'conn-status';
+    srow.appendChild(dot);
+    connStatusEl = dot;
+    applyConnStatus();
     box.appendChild(srow);
     // Containers live in a child group under the server row so the whole tree
     // collapses from its first level.
@@ -689,6 +801,12 @@ async function loadKeys() {
       stw.textContent = open ? '▾' : '▸';
     };
     box.appendChild(serverKids);
+    const r = await fetch(`/api/containers?conn=${encodeURIComponent(connSel.value)}`);
+    const containers = await r.json();
+    // Connection down / unreachable: leave the tree showing just the server row so
+    // the health-poll dot (red ✖) conveys the state, instead of dumping the raw
+    // backend error (e.g. "resp: invalid syntax") into the tree.
+    if (containers.error) { pingOnce(connSel.value); return; }
     containers.forEach((container, i) => {
       const { row, tw } = makeRow(1, '▸', container, true);
       const kids = document.createElement('div');
@@ -1341,10 +1459,76 @@ async function runCmd(cmd) {
   out.scrollTop = out.scrollHeight;
 }
 
+// ---- Background connection health poll (mirrors the TUI's status glyph) ----
+// Only redis exposes a ping endpoint that's meaningful here; the poll asks the
+// server every few seconds and tints the header dot green/red so a server that
+// dies while the page is idle is reflected without the user clicking anything.
+const POLL_INTERVAL = 3000;
+let pollTimer = null;
+let pollConn = -1; // connection index the current poll loop is bound to
+
+// connStatusEl is the dot on the current tree's server (root) row; loadKeys
+// re-creates it on every rebuild. connStatusState holds the latest poll result
+// so a rebuild can re-apply it without waiting for the next ping.
+let connStatusEl = null;
+let connStatusState = 'hidden';
+
+// applyConnStatus paints connStatusState onto connStatusEl (if the row exists).
+function applyConnStatus() {
+  const el = connStatusEl;
+  if (!el) return;
+  if (connStatusState === 'ok') {
+    el.className = 'conn-status show';
+    el.textContent = '●';
+    el.style.color = '#2ecc71';
+    el.title = 'Connected';
+  } else if (connStatusState === 'down') {
+    el.className = 'conn-status show';
+    el.textContent = '✖';
+    el.style.color = '#e74c3c';
+    el.title = 'Connection lost — reload to retry';
+  } else {
+    el.className = 'conn-status'; // hidden: backend not pollable
+    el.textContent = '';
+    el.title = '';
+  }
+}
+
+function setConnStatus(state) {
+  connStatusState = state;
+  applyConnStatus();
+}
+
+async function pingOnce(conn) {
+  try {
+    const r = await fetch(`/api/ping?conn=${encodeURIComponent(conn)}`);
+    const j = await r.json();
+    if (conn !== connSel.value) return; // selection changed mid-flight; ignore
+    if (!j.pollable) { setConnStatus('hidden'); return; }
+    setConnStatus(j.alive ? 'ok' : 'down');
+  } catch (e) {
+    if (conn === connSel.value) setConnStatus('down');
+  }
+}
+
+// startPoll (re)binds the health poll to the selected connection. Cancels any
+// prior loop so switching connections never leaves two timers running.
+function startPoll() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  pollConn = connSel.value;
+  setConnStatus('hidden'); // until the first ping resolves
+  pingOnce(pollConn);
+  pollTimer = setInterval(() => {
+    if (pollConn !== connSel.value) return; // stale guard
+    pingOnce(pollConn);
+  }, POLL_INTERVAL);
+}
+
 // onConnChange mirrors the old <select> onchange: persist selection + reload.
 function onConnChange() {
   fetch(`/api/select?conn=${encodeURIComponent(connSel.value)}`, {method: 'POST'});
   loadKeys();
+  startPoll();
 }
 
 // Custom dropdown interactions: toggle on the current-value box, pick on an
@@ -1538,7 +1722,7 @@ $('cmd').onkeydown = e => {
   if (e.key === 'Enter' && e.target.value.trim()) { runCmd(e.target.value.trim()); e.target.value = ''; }
 };
 
-(async () => { await loadConns(); await loadKeys(); })();
+(async () => { await loadConns(); await loadKeys(); startPoll(); })();
 </script>
 </body>
 </html>

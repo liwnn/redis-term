@@ -191,6 +191,19 @@ func (r *Redis) Do(cmd string, params ...string) (any, error) {
 	return r.client.DoReply(cmd, params...)
 }
 
+// Ping verifies the connection with a PING command. A non-PONG status or any
+// transport error means the connection is down.
+func (r *Redis) Ping() error {
+	s, err := r.client.DoStatus("PING")
+	if err != nil {
+		return err
+	}
+	if s != "PONG" {
+		return errors.New(s)
+	}
+	return nil
+}
+
 // Select select index
 func (r *Redis) Select(index int) error {
 	s, err := r.client.DoStatus("SELECT", strconv.Itoa(index))

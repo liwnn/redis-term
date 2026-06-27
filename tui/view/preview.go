@@ -332,8 +332,8 @@ func (p *Preview) EnableTableRowSelection(on bool) {
 	p.tablePreview.EnableRowSelection(on)
 }
 
-// SetTableDeleteRowsFunc registers the row-deletion callback (Ctrl-D) on the
-// table preview.
+// SetTableDeleteRowsFunc registers the row-deletion callback (Delete / 'd') on
+// the table preview.
 func (p *Preview) SetTableDeleteRowsFunc(f func(absRows []int) error) {
 	p.tablePreview.SetDeleteRowsFunc(f)
 }

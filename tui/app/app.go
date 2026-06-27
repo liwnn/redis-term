@@ -56,6 +56,8 @@ type treeController interface {
 	Cmd(w io.Writer, cmd string, params ...string) error
 	Connect() error               // 建立后端连接(可能阻塞在网络上),与建树分离以便异步
 	Expand()                      // 加载并展开第一层(redis db / mongo database)
+	Pollable() bool               // 后端是否支持后台健康轮询(redis 支持)
+	Ping() error                  // 健康检查(走独立连接);nil 表示连接存活
 	SetConnState(s connState)     // 设置根节点右侧的连接状态图标
 	Failed() bool                 // 根节点当前是否处于连接失败态(用于点击重连判定)
 	SetRootClickFunc(func() bool) // 根节点被点击时的拦截:返回 true 表示已处理(如重连),不再正常展开
@@ -75,6 +77,16 @@ type App struct {
 	// repeated root clicks don't kick off concurrent dials.
 	connecting map[string]bool
 
+	// pollers maps a cacheKey to the stop channel of its background health-poll
+	// goroutine, so the poll can be torn down when the connection is invalidated,
+	// deleted, or transitions to the failed state.
+	pollers map[string]chan struct{}
+
+	// dropPrevFocus is the primitive that held focus when Ctrl-P opened the
+	// connection dropdown, so Esc (abort) can return focus there instead of
+	// stranding it on the closed dropdown field.
+	dropPrevFocus tview.Primitive
+
 	searchMu    sync.Mutex
 	searchTimer *time.Timer
 }
@@ -89,6 +101,7 @@ func NewApp(cfgFile string) *App {
 		main:       view.NewMainView(),
 		trees:      make(map[string]treeController),
 		connecting: make(map[string]bool),
+		pollers:    make(map[string]chan struct{}),
 		cfg:        cfg,
 	}
 	a.init()
@@ -167,7 +180,19 @@ func (a *App) init() {
 	})
 	a.main.SetGlobalInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Key() == tcell.KeyCtrlP {
-			a.main.SetFocus(a.main.GetOpLine().SelectDropPrimitive())
+			a.dropPrevFocus = a.main.GetFocus()
+			a.main.GetOpLine().OpenSelectDrop(func(p tview.Primitive) { a.main.SetFocus(p) })
+			return nil
+		}
+		// Esc while the connection dropdown holds focus aborts selection and
+		// returns focus to wherever it was when Ctrl-P opened the dropdown,
+		// instead of stranding it on the closed dropdown field.
+		if event.Key() == tcell.KeyEscape && a.main.GetOpLine().SelectDropPrimitive().HasFocus() {
+			a.main.GetOpLine().CloseSelectDrop()
+			if a.dropPrevFocus != nil {
+				a.main.SetFocus(a.dropPrevFocus)
+				a.dropPrevFocus = nil
+			}
 			return nil
 		}
 		if event.Key() == tcell.KeyCtrlF {
@@ -199,20 +224,23 @@ func (a *App) init() {
 				return nil
 			}
 		}
-		// vim j/k/g/G inside the connection dropdown: translate to arrow/home/end
-		// so the embedded list navigates. Gated on the dropdown holding focus
-		// (true whether closed or its list is open) so type-ahead still works
-		// elsewhere. Letters that aren't nav keys fall through to type-ahead.
+		// Navigation keys inside the connection dropdown: vim j/k/g/G plus n/p
+		// (next/previous) translate to arrow/home/end so the embedded list moves.
+		// Gated on the dropdown holding focus (true whether closed or its list is
+		// open). Every other rune is swallowed so stray letters can't trigger
+		// type-ahead jumps — the list is navigated only by these keys.
 		if event.Key() == tcell.KeyRune && a.main.GetOpLine().SelectDropPrimitive().HasFocus() {
 			switch event.Rune() {
-			case 'j':
+			case 'j', 'n', 'N':
 				return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
-			case 'k':
+			case 'k', 'p', 'P':
 				return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
 			case 'g':
 				return tcell.NewEventKey(tcell.KeyHome, 0, tcell.ModNone)
 			case 'G':
 				return tcell.NewEventKey(tcell.KeyEnd, 0, tcell.ModNone)
+			default:
+				return nil // block all other runes (no type-ahead)
 			}
 		}
 		// vim h/l mirror the arrow jumps between tree and table, but only when
@@ -244,6 +272,9 @@ func (a *App) Run() {
 		panic(err)
 	}
 
+	for key := range a.trees {
+		a.stopPoll(key)
+	}
 	for _, client := range a.trees {
 		client.Close()
 	}
@@ -302,6 +333,7 @@ func (a *App) connectAsync(t treeController, cacheKey, name string) {
 		return
 	}
 	a.connecting[cacheKey] = true
+	a.stopPoll(cacheKey) // a fresh connect supersedes any prior poll
 	t.SetConnState(connConnecting)
 	go func() {
 		err := t.Connect()
@@ -314,8 +346,61 @@ func (a *App) connectAsync(t treeController, cacheKey, name string) {
 			}
 			t.SetConnState(connOK)
 			t.Expand()
+			a.startPoll(t, cacheKey, name)
 		})
 	}()
+}
+
+// pollInterval is how often a live connection is health-checked in the
+// background, so a server that dies while the user is idle flips the tree's
+// status glyph to red within a few seconds.
+const pollInterval = 3 * time.Second
+
+// startPoll launches a background health-check loop for a freshly-connected
+// tree that supports polling. On the first failed ping it flips the glyph to
+// the failed state (enabling click-to-reconnect) and stops; the reconnect path
+// restarts polling on success. Must run on the UI goroutine (it mutates
+// a.pollers, which connectAsync/stopPoll also touch there).
+func (a *App) startPoll(t treeController, cacheKey, name string) {
+	if !t.Pollable() {
+		return
+	}
+	a.stopPoll(cacheKey) // never run two pollers for one connection
+	stop := make(chan struct{})
+	a.pollers[cacheKey] = stop
+	go func() {
+		ticker := time.NewTicker(pollInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-ticker.C:
+				if err := t.Ping(); err != nil {
+					a.main.QueueUpdateDraw(func() {
+						// Ignore a stale failure: if this poller was already replaced or
+						// stopped, leave the current state alone.
+						if a.pollers[cacheKey] != stop {
+							return
+						}
+						tlog.Log("[Poll] %q health check failed: %v", name, err)
+						t.SetConnState(connFailed)
+						delete(a.pollers, cacheKey)
+					})
+					return
+				}
+			}
+		}
+	}()
+}
+
+// stopPoll tears down the background health poll for a connection, if any. Must
+// run on the UI goroutine.
+func (a *App) stopPoll(cacheKey string) {
+	if stop, ok := a.pollers[cacheKey]; ok {
+		close(stop)
+		delete(a.pollers, cacheKey)
+	}
 }
 
 // reconnect retries a connection from a root-node click. It acts only in the
@@ -488,6 +573,7 @@ func (a *App) focus(p tview.Primitive) {
 func (a *App) invalidate(index int) {
 	key := strconv.Itoa(index)
 	if t, ok := a.trees[key]; ok {
+		a.stopPoll(key)
 		t.Close()
 		delete(a.trees, key)
 	}
@@ -500,6 +586,9 @@ func (a *App) invalidate(index int) {
 func (a *App) deleteConn(index int) {
 	if index < 0 || index >= a.cfg.Count() {
 		return
+	}
+	for key := range a.trees {
+		a.stopPoll(key)
 	}
 	for _, t := range a.trees {
 		t.Close()

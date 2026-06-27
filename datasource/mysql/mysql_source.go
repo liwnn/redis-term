@@ -24,7 +24,10 @@ type MySQLSource struct {
 	db  *sql.DB
 }
 
-var _ datasource.Datasource = (*MySQLSource)(nil)
+var (
+	_ datasource.Datasource = (*MySQLSource)(nil)
+	_ datasource.Pinger     = (*MySQLSource)(nil)
+)
 
 // NewMySQLSource builds a source from connection parts, assembling a
 // go-sql-driver DSN like "user:pass@tcp(127.0.0.1:3306)/".
@@ -58,6 +61,18 @@ func (s *MySQLSource) Close() {
 	if s.db != nil {
 		s.db.Close()
 	}
+}
+
+// Ping verifies the connection is alive, so the UI can show a health dot.
+// database/sql pools and auto-reconnects, so this reuses the pool rather than a
+// dedicated connection.
+func (s *MySQLSource) Ping() error {
+	if s.db == nil {
+		return fmt.Errorf("not connected")
+	}
+	c, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return s.db.PingContext(c)
 }
 
 func (s *MySQLSource) Containers() ([]string, error) {

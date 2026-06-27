@@ -26,7 +26,10 @@ type MongoSource struct {
 	client *mongo.Client
 }
 
-var _ datasource.Datasource = (*MongoSource)(nil)
+var (
+	_ datasource.Datasource = (*MongoSource)(nil)
+	_ datasource.Pinger     = (*MongoSource)(nil)
+)
 
 // NewMongoSource builds a source for a mongodb URI (e.g. "mongodb://host:27017").
 func NewMongoSource(uri string) *MongoSource {
@@ -49,6 +52,18 @@ func (s *MongoSource) Open() error {
 	}
 	s.client = client
 	return nil
+}
+
+// Ping verifies the connection is alive, so the UI can show a health dot. The
+// mongo driver pools and auto-reconnects, so unlike redis this reuses the main
+// client rather than a dedicated connection.
+func (s *MongoSource) Ping() error {
+	if s.client == nil {
+		return fmt.Errorf("not connected")
+	}
+	c, cancel := ctx()
+	defer cancel()
+	return s.client.Ping(c, nil)
 }
 
 func (s *MongoSource) Close() {

@@ -32,15 +32,20 @@ var (
 
 	// Query input: a slightly lifted dark fill (just above the panel bg) so the
 	// field reads as a distinct box, with a dim placeholder when empty.
-	ThemeQueryBG          = tcell.GetColor("#252627")
+	ThemeQueryBG          = ThemePanelBG
 	ThemeQueryFG          = tcell.ColorWhite
 	ThemeQueryPlaceholder = tcell.GetColor("#6b6b6b")
 	ThemeQueryLabel       = tcell.GetColor("lightsteelblue")
 
-	// ThemeInputBG is a noticeably lifted fill for single-line input fields (the
-	// Key box) so their boundary is clearly visible against the panel bg —
-	// #252627 sits too close to #191a1b to read as a distinct box.
-	ThemeInputBG = tcell.GetColor("#3a4048")
+	// ThemeInputBG is the fill for single-line input fields (the Key box): a
+	// lifted dark fill, slightly brighter than ThemeDropFieldBG, so the input
+	// box reads clearly against the panel bg.
+	ThemeInputBG = tcell.GetColor("#2e3238")
+
+	// ThemeDropFieldBG is the connection-dropdown field background (the current
+	// value / top row when open): a dark fill, dimmer than ThemeInputBG, so it
+	// reads as distinct from the option list below it.
+	ThemeDropFieldBG = tcell.GetColor("#2a2d30")
 
 	// ThemeSelectBG highlights the active selection (selected table cell,
 	// dropdown item, tree node) with a calm blue.
