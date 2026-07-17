@@ -1,6 +1,10 @@
 package view
 
-import "github.com/gdamore/tcell/v2"
+import (
+	"strings"
+
+	"github.com/gdamore/tcell/v2"
+)
 
 // 统一浅色主题，尽量在不同终端保持一致
 var (
@@ -79,3 +83,42 @@ const (
 	tabActiveFG   = "white"
 	tabInactiveFG = "#7c8597"
 )
+
+// typeBadgeColors maps lowercase Redis / datasource type names to a background
+// color tag string used to render a coloured badge (e.g. "[white:#3465a4:b] HASH [-:-:-]").
+var typeBadgeColors = map[string]string{
+	"string":     "#1b6891", // dark blue-cyan (more blue)
+	"hash":       "#3465a4", // blue
+	"zset":       "#7d387f", // deeper light orchid/purple (slightly more purple)
+	"set":        "#723030", // warm maroon/red-brown
+	"list":       "#6e5223", // muted amber/yellow-brown
+	"stream":     "#1e6e2e", // greener dark green (increased green brightness slightly)
+	"collection": "#5d4037", // brown (mongo)
+	"table":      "#455a64", // blue-gray (mysql)
+	"znode":      "#616161", // gray (zookeeper)
+}
+
+// TypeBadge returns a tview color-tagged string that renders as an uppercase
+// type name on a coloured background chip (e.g. "[white:#3465a4:b] HASH [-:-:-]").
+// If the type is empty it returns "".
+func TypeBadge(typeName string) string {
+	if typeName == "" {
+		return ""
+	}
+	bg, ok := typeBadgeColors[typeName]
+	if !ok {
+		bg = "#546e7a" // default steel
+	}
+	return "[white:" + bg + ":b] " + strings.ToUpper(typeName) + " [-:-:-]"
+}
+
+// TypeBadgeColor returns the tcell.Color for the given type name's badge
+// background color, for use with SetBackgroundColor on a tview widget.
+func TypeBadgeColor(typeName string) tcell.Color {
+	bg, ok := typeBadgeColors[typeName]
+	if !ok {
+		bg = "#546e7a"
+	}
+	return tcell.GetColor(bg)
+}
+

@@ -56,9 +56,7 @@ func NewPreview() *Preview {
 	renameBtn := tview.NewButton("Rename")
 	renameBtn.SetStyle(tcell.StyleDefault.Background(ThemeBtnToolBG).Foreground(ThemeBtnToolFG))
 	renameBtn.SetActivatedStyle(tcell.StyleDefault.Background(ThemeBtnToolHoverBG).Foreground(tcell.ColorWhite))
-	// Columns: [Reload | Delete | Key input | Rename | stretch]. The former
-	// Type/Size chip columns were removed (Type/Size now live in the preview's
-	// own header row), so the buttons sit flush at the left of the op bar.
+	// Columns: [Reload | Delete | Key input | Rename | stretch].
 	grid := tview.NewGrid().
 		SetRows(-1).
 		SetColumns(10, 10, 30, 10, -1).
@@ -155,7 +153,7 @@ func (p *Preview) init() {
 		}
 		info := fmt.Sprintf("[gray]Size: %d bytes", size)
 		if t := p.tablePreview.CellType(row, column); t != "" {
-			info = fmt.Sprintf("[gray]Type: %s   Size: %d bytes", t, size)
+			info = TypeBadge(t) + fmt.Sprintf("  [gray]Size: %d bytes", size)
 		}
 		p.tablePreview.SetCellInfo(info)
 	})
@@ -222,15 +220,13 @@ func (p *Preview) SetKeyType(t string) {
 func (p *Preview) refreshTextInfo() {
 	parts := ""
 	if p.keyType != "" {
-		parts = fmt.Sprintf("[gray]Type: %s", p.keyType)
+		parts = TypeBadge(p.keyType)
 	}
 	if p.keySize != "" {
 		if parts != "" {
 			parts += "   "
-		} else {
-			parts = "[gray]"
 		}
-		parts += p.keySize
+		parts += "[gray]" + p.keySize
 	}
 	p.textPreview.SetInfo(parts)
 }
@@ -242,8 +238,8 @@ func (p *Preview) SetTypeText(text string) {
 		p.typeText.SetBackgroundColor(ThemePanelBG)
 	} else {
 		p.grid.AddItem(p.typeText, 0, 0, 1, 1, 0, 0, false)
-		p.typeText.SetBackgroundColor(ThemeChipBG)
-		text = " " + text // 左侧留一个空格,chip 文字不贴边
+		p.typeText.SetBackgroundColor(TypeBadgeColor(p.keyType))
+		text = " " + text + " " // 左右各留一个空格,chip 文字不贴边
 	}
 	p.typeText.SetText(text)
 }

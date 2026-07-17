@@ -780,7 +780,7 @@ func (p *TablePreview) updateStatus() {
 	} else {
 		statusText = fmt.Sprintf("[gray]%d row%s", len(p.rows), plural(len(p.rows)))
 		if p.entryType != "" {
-			statusText = fmt.Sprintf("[gray]Type: %s   %d row%s", p.entryType, len(p.rows), plural(len(p.rows)))
+			statusText = TypeBadge(p.entryType) + fmt.Sprintf("  [gray]%d row%s", len(p.rows), plural(len(p.rows)))
 		}
 	}
 	p.statusView.SetText(statusText)
