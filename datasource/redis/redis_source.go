@@ -1,13 +1,17 @@
 package redis
 
 import (
+	"errors"
 	"fmt"
+	"io"
+	"net"
 	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/liwnn/redisterm/datasource"
 	"github.com/liwnn/redisterm/datasource/redis/redisapi"
+	"github.com/liwnn/redisterm/datasource/redis/redisapi/resp"
 	"github.com/liwnn/redisterm/tlog"
 )
 
@@ -97,19 +101,59 @@ func dbIndex(container string) (int, error) {
 	return strconv.Atoi(n)
 }
 
-// selectDB switches to the db named by container.
+// selectDB switches to the db named by container. It heals a broken/desynced
+// data connection first: because the health-check runs on a separate connection,
+// a dead data connection is never evicted on its own, so every data operation
+// (which starts by selecting its db) re-dials once if the SELECT hits a
+// connection-level error. SELECT is idempotent, so the retry is safe.
 func (s *RedisSource) selectDB(container string) error {
 	idx, err := dbIndex(container)
 	if err != nil {
 		return fmt.Errorf("invalid container %q", container)
 	}
-	return s.redis.Select(idx)
+	if err := s.redis.Select(idx); err != nil {
+		if !isConnErr(err) {
+			return err
+		}
+		if rerr := s.redis.Reconnect(); rerr != nil {
+			return rerr
+		}
+		return s.redis.Select(idx)
+	}
+	return nil
+}
+
+// isConnErr reports whether err indicates the connection itself is broken or
+// desynced — a transport failure (EOF, closed socket, timeout) or a protocol
+// parse error (a stale/partial reply left the RESP stream misaligned, surfacing
+// as resp.ErrInvalidSyntax). These are recoverable by re-dialing. It deliberately
+// excludes normal redis error replies (WRONGTYPE, NOAUTH, ...), which arrive as
+// well-formed "(error) ..." messages on a healthy connection and must not trigger
+// a reconnect.
+func isConnErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, resp.ErrInvalidSyntax) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr)
 }
 
 func (s *RedisSource) Containers() ([]string, error) {
 	n, err := s.redis.GetDatabases()
 	if err != nil {
-		return nil, err
+		if !isConnErr(err) {
+			return nil, err
+		}
+		if rerr := s.redis.Reconnect(); rerr != nil {
+			return nil, rerr
+		}
+		n, err = s.redis.GetDatabases()
+		if err != nil {
+			return nil, err
+		}
 	}
 	names := make([]string, 0, n)
 	for i := 0; i < n; i++ {

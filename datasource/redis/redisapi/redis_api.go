@@ -35,6 +35,13 @@ type StreamEntry struct {
 type Redis struct {
 	client *resp.Client
 	logger Logger
+
+	// address/auth are retained so Reconnect can re-dial after the connection is
+	// lost or desyncs; a data connection has no independent recovery path (only
+	// the health-check connection redials on its own), so the source layer drives
+	// reconnection through these.
+	address string
+	auth    string
 }
 
 // logf logs through the injected Logger, if any.
@@ -54,8 +61,10 @@ func NewRedis(address string, auth string, logger Logger) (*Redis, error) {
 		return nil, err
 	}
 	r := &Redis{
-		client: resp.NewClient(conn),
-		logger: logger,
+		client:  resp.NewClient(conn),
+		logger:  logger,
+		address: address,
+		auth:    auth,
 	}
 	if len(auth) > 0 {
 		s, err := r.client.DoStatus("AUTH", auth)
@@ -65,6 +74,29 @@ func NewRedis(address string, auth string, logger Logger) (*Redis, error) {
 		r.logf("[Redis] AUTH %v", s)
 	}
 	return r, nil
+}
+
+// Reconnect drops the current connection and re-dials the same address,
+// re-authenticating. It is used to recover a data connection that has broken or
+// desynced (a stale reply left the protocol stream misaligned): unlike the
+// health-check connection, a data connection would otherwise stay unusable
+// forever, since a separate ping connection keeps reporting the server alive.
+// The caller is responsible for restoring per-connection state (e.g. re-SELECTing
+// the db) after a successful reconnect.
+func (r *Redis) Reconnect() error {
+	conn, err := net.DialTimeout("tcp", r.address, 5*time.Second)
+	if err != nil {
+		return err
+	}
+	r.client.Close()
+	r.client = resp.NewClient(conn)
+	if len(r.auth) > 0 {
+		if _, err := r.client.DoStatus("AUTH", r.auth); err != nil {
+			return err
+		}
+	}
+	r.logf("[Redis] reconnected to %v", r.address)
+	return nil
 }
 
 // Close close conn.
