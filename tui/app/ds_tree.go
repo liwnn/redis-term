@@ -1164,6 +1164,7 @@ func (t *DSTree) showContent(c datasource.Content) {
 	// query box so the user can see and edit what ran.
 	p.SetQueryText(c.Query)
 	if c.Kind == datasource.KindText {
+		p.SetSizeText(fmt.Sprintf("%d bytes", len(c.Text)))
 		// Nested-mode text (zookeeper znode data) is editable with a Save button;
 		// other backends' text is read-only.
 		p.ShowText(c.Text, t.pathSep != "")
