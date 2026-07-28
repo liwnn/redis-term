@@ -15,7 +15,7 @@ type MainView struct {
 	body         *tview.Flex
 	leftFlexBox  *tview.Flex
 	rightFlexBox *tview.Flex
-	modal        *tview.Modal
+	modal        *ConfirmDialog
 
 	// leftWidth, when > 0, pins the tree panel to a fixed column width set by
 	// dragging the divider; 0 keeps the default 1:4 proportional split.
@@ -115,6 +115,7 @@ func (m *MainView) init() {
 		m.pages.ShowPage("conn_setting")
 		m.connSetting.SetEdit(false)
 		m.connSetting.Init(Setting{Kind: "redis"})
+		m.SetFocus(m.connSetting.FormPrimitive()) // Init rebuilt the form; re-focus so Esc closes
 	})
 	m.search = tview.NewInputField()
 	m.search.SetLabel(" 🔍 ").
@@ -144,6 +145,7 @@ func (m *MainView) init() {
 		AddItem(body, 0, 1, true)
 	mainFlexBox.SetBackgroundColor(ThemePanelBG)
 	m.connSetting = NewConnSetting()
+	m.connSetting.SetClipboardHandler(m.Clipboard)
 	m.connSetting.SetCancelHandler(func() {
 		m.pages.HidePage("conn_setting")
 	})
@@ -219,15 +221,15 @@ func (m *MainView) setLeftWidth(width, total int) {
 	m.body.ResizeItem(m.leftFlexBox, width, 0)
 }
 
-func (m *MainView) createModal() *tview.Modal {
-	modal := tview.NewModal()
-	return modal
+func (m *MainView) createModal() *ConfirmDialog {
+	return NewConfirmDialog()
 }
 
 func (m *MainView) ShowConnSetting(cfg Setting, edit bool) {
 	m.pages.ShowPage("conn_setting")
 	m.connSetting.SetEdit(edit)
 	m.connSetting.Init(cfg)
+	m.SetFocus(m.connSetting.FormPrimitive()) // Init rebuilt the form; re-focus so Esc closes
 }
 
 func (m *MainView) HideConnSetting() {
@@ -236,25 +238,22 @@ func (m *MainView) HideConnSetting() {
 
 // ShowModal show modal
 func (m *MainView) ShowModal(text string, okFunc func()) {
-	m.modal.ClearButtons()
-	m.modal.AddButtons([]string{"Ok", "Cancel"})
-	m.modal.SetText(text).
-		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
-			if buttonIndex == 0 && okFunc != nil {
-				okFunc()
-			}
-			m.pages.HidePage("modal")
-		})
+	m.modal.Show(text, func(ok bool) {
+		m.pages.HidePage("modal")
+		if ok && okFunc != nil {
+			okFunc()
+		}
+	})
 	m.pages.ShowPage("modal")
+	m.SetFocus(m.modal.FormPrimitive()) // focus the buttons so Enter/Esc/arrows work
 }
 
 func (m *MainView) ShowModalOK(text string) {
-	m.modal.ClearButtons()
-	m.modal.AddButtons([]string{"Ok"})
-	m.modal.SetText(text).SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+	m.modal.ShowOK(text, func() {
 		m.pages.HidePage("modal")
 	})
 	m.pages.ShowPage("modal")
+	m.SetFocus(m.modal.FormPrimitive())
 }
 
 // Run run

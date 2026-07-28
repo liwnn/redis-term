@@ -42,7 +42,7 @@
   #content { flex: 1; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
   #value { flex: 1; overflow: auto; overscroll-behavior: contain; padding: 0 12px 12px; }
   .meta { padding: 8px 12px; background: #252526; border-bottom: 1px solid #333; display: flex; gap: 10px; align-items: center; }
-  .badge { background: #d33; color: #fff; padding: 1px 7px; border-radius: 3px; font-size: 11px; text-transform: uppercase; }
+  .badge { background: #546e7a; color: #fff; padding: 1px 7px; border-radius: 3px; font-size: 11px; text-transform: uppercase; font-weight: bold; }
   pre { margin: 0; white-space: pre-wrap; word-break: break-all; }
   table { border-collapse: separate; border-spacing: 0; width: auto; max-width: 100%; }
   td, th { border: 1px solid #333; border-left: none; padding: 4px 8px; text-align: left; vertical-align: top; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 600px; }
@@ -105,19 +105,19 @@
     <div class="frow"><label>Kind</label>
       <select id="f_kind"><option value="redis">redis</option><option value="mongo">mongo</option><option value="mysql">mysql</option><option value="zookeeper">zookeeper</option></select>
     </div>
+    <div class="frow" data-show="mongo-form,mongo-url"><label>Mode</label>
+      <select id="f_mode"><option value="form">form</option><option value="url">url</option></select>
+    </div>
     <div class="frow" data-show="redis,mysql,mongo-form,zookeeper"><label>Host</label><input id="f_host" placeholder="127.0.0.1"></div>
     <div class="frow" data-show="redis,mysql,mongo-form,zookeeper"><label>Port</label><input id="f_port" placeholder="6379"></div>
     <div class="frow" data-show="mysql,mongo-form"><label>User</label><input id="f_user"></div>
     <div class="frow" data-show="redis,mysql,mongo-form"><label>Auth</label><input id="f_auth" type="password"></div>
     <div class="frow" data-show="mongo-form"><label>DB</label><input id="f_db"></div>
     <div class="frow" data-show="mongo-url"><label>URI</label><input id="f_uri" placeholder="mongodb://user:pass@host:27017/admin"></div>
-    <div class="frow" data-show="mongo-form,mongo-url"><label>Mode</label>
-      <select id="f_mode"><option value="form">form</option><option value="url">url</option></select>
-    </div>
     <div class="modal-status" id="connModalStatus"></div>
     <div class="modal-btns">
-      <button id="connSaveBtn">OK</button>
       <button id="connTestBtn">Test</button>
+      <button id="connSaveBtn">Save</button>
       <button id="connCancelBtn">Cancel</button>
     </div>
   </div>
@@ -221,6 +221,23 @@ const connSel = {
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
+}
+
+// typeBadgeColors mirrors tui/view/theme.go so key-type badges share one palette
+// across the TUI and web UI.
+const typeBadgeColors = {
+  string:     '#5c6bc0',
+  hash:       '#3465a4',
+  zset:       '#7d387f',
+  set:        '#723030',
+  list:       '#6e5223',
+  stream:     '#1e6e2e',
+  collection: '#5d4037',
+  table:      '#455a64',
+  znode:      '#616161',
+};
+function typeBadgeColor(t) {
+  return typeBadgeColors[String(t || '').toLowerCase()] || '#546e7a';
 }
 
 async function loadConns() {
@@ -874,6 +891,7 @@ let currentRowCount = 0; // rows shown in the active table, for the idle toolbar
 function renderContent(c) {
   $('meta').style.display = 'flex';
   $('vtype').textContent = c.type;
+  $('vtype').style.background = typeBadgeColor(c.type);
   $('vkey').textContent = c.entry;
   const box = $('value');
   pending = new Map();

@@ -129,7 +129,6 @@ func (a *App) init() {
 			DB:   config.DB,
 		}
 		a.main.ShowConnSetting(setting, true)
-		tlog.Log("[App] init Edit Click: %v", setting)
 	})
 
 	a.main.GetConnSetting().SetTestHandler(func(s view.Setting) error {

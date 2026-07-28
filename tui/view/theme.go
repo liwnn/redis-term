@@ -46,10 +46,20 @@ var (
 	// box reads clearly against the panel bg.
 	ThemeInputBG = tcell.GetColor("#2e3238")
 
+	// ThemeInputFocusBG is the fill for the input field that currently holds
+	// keyboard focus — a lifted, cooler shade of ThemeInputBG so the active field
+	// stands out from the other (dimmer) fields at a glance, beyond just the cursor.
+	ThemeInputFocusBG = tcell.GetColor("#3c4657")
+
 	// ThemeDropFieldBG is the connection-dropdown field background (the current
 	// value / top row when open): a dark fill, dimmer than ThemeInputBG, so it
 	// reads as distinct from the option list below it.
 	ThemeDropFieldBG = tcell.GetColor("#2a2d30")
+
+	// ThemeDialogBG is the fill of a floating dialog card — lifted above
+	// ThemePanelBG so the dialog stands out from the (equally dark) main panels
+	// still visible behind it.
+	ThemeDialogBG = tcell.GetColor("#23262b")
 
 	// ThemeSelectBG highlights the active selection (selected table cell,
 	// dropdown item, tree node) with a calm blue.
@@ -60,12 +70,21 @@ var (
 	// band while the selected cell still stands out on top.
 	ThemeRowHighlightBG = tcell.GetColor("#22303d")
 
-	// Toolbar buttons (the +/e icons by the connection selector): a flat,
-	// slightly lifted fill that sits cleanly on the dark panel instead of the
-	// muddy remapped green. Explicit RGB avoids terminal palette remapping.
-	ThemeBtnToolBG      = tcell.GetColor("#454e5a")
-	ThemeBtnToolFG      = tcell.GetColor("#dce3ea")
-	ThemeBtnToolHoverBG = tcell.GetColor("#5a6675")
+	// Toolbar buttons (the +/e icons by the connection selector, and the dialog's
+	// secondary Test/Cancel actions): a lifted blue-gray fill with clear contrast
+	// against both the dark panel and the plain-text field labels, so a button
+	// reads as a raised, clickable chip rather than a coloured label. Explicit RGB
+	// avoids terminal palette remapping.
+	ThemeBtnToolBG      = tcell.GetColor("#556377")
+	ThemeBtnToolFG      = tcell.GetColor("#eef2f6")
+	ThemeBtnToolHoverBG = tcell.GetColor("#6c7d94")
+
+	// Primary button (the dialog's OK / confirm action): a saturated blue that
+	// stands out from the flat gray toolbar buttons so the default action reads
+	// as the emphasized one. Explicit RGB avoids terminal palette remapping.
+	ThemeBtnPrimaryBG      = tcell.GetColor("#2f6fd6")
+	ThemeBtnPrimaryFG      = tcell.ColorWhite
+	ThemeBtnPrimaryHoverBG = tcell.GetColor("#4a86ea")
 
 	// Destructive buttons (Drop/Delete): a muted red that stays readable on the
 	// dark panel, brightening on focus. Explicit RGB avoids palette remapping.
@@ -87,7 +106,7 @@ const (
 // typeBadgeColors maps lowercase Redis / datasource type names to a background
 // color tag string used to render a coloured badge (e.g. "[white:#3465a4:b] HASH [-:-:-]").
 var typeBadgeColors = map[string]string{
-	"string":     "#1b6891", // dark blue-cyan (more blue)
+	"string":     "#5c6bc0", // dark blue-cyan (more blue)
 	"hash":       "#3465a4", // blue
 	"zset":       "#7d387f", // deeper light orchid/purple (slightly more purple)
 	"set":        "#723030", // warm maroon/red-brown
@@ -121,4 +140,3 @@ func TypeBadgeColor(typeName string) tcell.Color {
 	}
 	return tcell.GetColor(bg)
 }
-

@@ -7,10 +7,12 @@ import (
 	"github.com/rivo/tview"
 )
 
-// dropMinWidth pads each dropdown option to at least this display width so the
-// popup list (which tview sizes to the longest option) stays comfortably wide
-// instead of hugging short connection names.
-const dropMinWidth = 28
+// dropFieldWidth is the closed dropdown field's display width (excluding the
+// label). dropCaretSuffix is appended to the closed value as a ▼ hint.
+const (
+	dropFieldWidth  = 34
+	dropCaretSuffix = " ▼ " // leading space + caret + one trailing space
+)
 
 type OpLine struct {
 	*tview.Flex
@@ -30,9 +32,13 @@ func NewOpLine() *OpLine {
 }
 
 func (o *OpLine) init() {
-	drop := tview.NewDropDown().SetLabel("⛁").SetFieldWidth(34) // matches opBarDropWidth (minus label) so long names show in full
+	drop := tview.NewDropDown().SetLabel("⛁").SetFieldWidth(dropFieldWidth) // matches opBarDropWidth (minus label) so long names show in full
 	drop.SetLabelWidth(2)
 	drop.SetUseStyleTags(true) // 选项用颜色标签区分 redis/mongo/mysql(见 config.GetDbNames)
+	// 闭合态字段右侧加一个 ▼ 提示符,让它一眼区别于普通文本输入框(两者背景色几乎一致)。
+	// currentSuffix 只作用于闭合显示,不污染下拉列表;AddSelect 已把选项右补齐到
+	// dropFieldWidth-len(▼),故箭头正好落在字段右缘、右侧仅留一个空格。
+	drop.SetTextOptions("", "", "", dropCaretSuffix, "")
 	drop.SetLabelColor(ThemeQueryLabel)
 	drop.SetFieldTextColor(ThemeQueryFG)
 	// The field (the closed value / top row when open) gets a lifted background so
@@ -87,12 +93,15 @@ func (o *OpLine) init() {
 	o.delBtn = delBtn
 }
 
-// AddSelect add select
+// AddSelect adds a connection option. The visible label is right-padded so that
+// label + caret suffix fills the field exactly — that keeps the ▼ flush at the
+// field's right edge (with one trailing space) instead of floating mid-field
+// with an empty colored box after it.
 func (o *OpLine) AddSelect(text string) {
-	if w := tview.TaggedStringWidth(text); w < dropMinWidth {
-		text += strings.Repeat(" ", dropMinWidth-w) // 右留白补齐到最小宽度
+	pad := dropFieldWidth - tview.TaggedStringWidth(dropCaretSuffix)
+	if w := tview.TaggedStringWidth(text); w < pad {
+		text += strings.Repeat(" ", pad-w)
 	}
-	text += " " // 右边固定再留一个空格
 	o.selectDrop.AddOption(text, nil)
 }
 func (o *OpLine) ClearAllSelect() {
