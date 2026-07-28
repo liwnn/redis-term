@@ -90,6 +90,17 @@ type DSTree struct {
 	curQuery     string // active mongo filter for the current entry
 	cur          datasource.Content
 
+	// Command-box state. cmdScoped marks a backend whose command box runs against
+	// an explicit database (mongo: db.<coll>.find(...); mysql: SQL after USE <db>),
+	// as opposed to redis where the connection carries its own SELECTed db.
+	// cmdContainer is the command box's current database, kept separate from
+	// curContainer (which locates cell edits) so `use <db>` can't move the
+	// editing target. onCmdDB notifies the app when it changes, to refresh the
+	// prompt.
+	cmdScoped     bool
+	cmdContainer string
+	onCmdDB      func(db string)
+
 	// rootClick, when set, is consulted when the server (root) node is selected;
 	// returning true means it was handled (e.g. a reconnect) and normal expansion
 	// is skipped.
@@ -180,6 +191,41 @@ func (t *DSTree) SetKeyTree(sep string) {
 func (t *DSTree) SetQueueUpdate(fn func(func())) {
 	t.queueUpdate = fn
 }
+
+// SetCmdScoped marks this tree's command box as database-scoped (mongo / mysql):
+// commands run against an explicit database (cmdContainer), settable via
+// `use <db>` or by selecting a node in the tree. onCmdDB is called whenever that
+// database changes so the caller can update the prompt.
+func (t *DSTree) SetCmdScoped(onCmdDB func(db string)) {
+	t.cmdScoped = true
+	t.onCmdDB = onCmdDB
+}
+
+// setCmdDB updates the command box's current database and notifies the app so
+// the prompt reflects it. No-op when db is empty or unchanged.
+func (t *DSTree) setCmdDB(db string) {
+	if db == "" || db == t.cmdContainer {
+		return
+	}
+	t.cmdContainer = db
+	if t.onCmdDB != nil {
+		t.onCmdDB(db)
+	}
+}
+
+// UseDB switches the database-scoped command box to database db (the `use <db>`
+// equivalent). Returns false for backends without a scoped command box.
+func (t *DSTree) UseDB(db string) bool {
+	if !t.cmdScoped {
+		return false
+	}
+	t.setCmdDB(db)
+	return true
+}
+
+// CmdDB returns the command box's current database, for restoring the prompt
+// when re-showing a cached tree.
+func (t *DSTree) CmdDB() string { return t.cmdContainer }
 
 // IsLoading reports whether any container's background SCAN is in flight. While
 // true, the redis connection is in exclusive use and UI actions that would issue
@@ -1126,6 +1172,9 @@ func (t *DSTree) onChanged(node *tview.TreeNode) {
 	if !hasContent {
 		// A flat-mode container (mongo database / mysql) has no single value, but it
 		// can still be dropped, so show the op bar (Reload/Drop) over an empty pane.
+		if ref != nil && ref.level == dsContainer {
+			t.setCmdDB(ref.name) // follow the tree: selecting a db retargets the command box
+		}
 		t.preview.Clear()
 		t.preview.ShowText("", false)
 		t.preview.SetOpBtnVisible(ref != nil && ref.level == dsContainer)
@@ -1153,6 +1202,7 @@ func (t *DSTree) onChanged(node *tview.TreeNode) {
 	t.curEntry = entry
 	t.curQuery = ""
 	t.cur = c
+	t.setCmdDB(container) // follow the tree: selecting an entry retargets the command box to its db
 	t.showContent(c)
 }
 
@@ -1423,13 +1473,23 @@ func (t *DSTree) Index() int {
 	return 0
 }
 
-// Cmd runs a backend-native command via the datasource.
+// Cmd runs a backend-native command via the datasource. For database-scoped
+// backends (mongo / mysql) the command runs against the command box's current
+// database (cmdContainer), falling back to the tree's selected container; redis
+// passes "" and relies on the connection's own SELECTed db.
 func (t *DSTree) Cmd(w io.Writer, cmd string, params ...string) error {
 	raw := cmd
 	for _, p := range params {
 		raw += " " + p
 	}
-	reply, err := t.src.Command("", raw)
+	container := ""
+	if t.cmdScoped {
+		container = t.cmdContainer
+		if container == "" {
+			container = t.curContainer
+		}
+	}
+	reply, err := t.src.Command(container, raw)
 	if err != nil {
 		return err
 	}

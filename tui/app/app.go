@@ -71,6 +71,11 @@ type App struct {
 	main *view.MainView
 	tree treeController
 
+	// curKind is the backend kind ("" / "redis" / "mongo" / "mysql" / ...) of the
+	// currently shown connection, so command-box handling can special-case redis
+	// (SELECT n switches db) without misfiring on a mysql SELECT query.
+	curKind string
+
 	trees map[string]treeController
 
 	// connecting marks cacheKeys with a background connect attempt in flight, so
@@ -306,12 +311,30 @@ func (a *App) Show(index int) {
 	}
 
 	a.tree = t
+	// Each connection keeps its own command-box session (scrollback, input,
+	// history, prompt); Switch swaps the active one in. Same-key re-shows (e.g.
+	// after SELECT) are a no-op, so in-flight input and output are preserved.
+	a.main.GetCmd().Switch(cacheKey)
 	a.main.SetTree(a.tree.TreeView())
 	a.main.GetSearch().SetText("") // clear the filter when switching connections
 	a.main.SetPreview(a.tree.PreviewFlex())
-	a.main.SetPreviewOpBar(a.tree.Preview().OpBar())              // host this tree's op row in the top bar
-	a.main.SetCliVisible(conf.Kind == "" || conf.Kind == "redis") // redis-cli only for redis
-	a.main.GetCmd().SetPromt(conf.Name, a.tree.Index())
+	a.main.SetPreviewOpBar(a.tree.Preview().OpBar()) // host this tree's op row in the top bar
+	// The command box (labeled "CLI") is shown for redis, mongo and mysql.
+	a.curKind = conf.Kind
+	switch conf.Kind {
+	case "", "redis":
+		a.main.SetCliVisible(true, "CLI")
+		a.main.GetCmd().SetPromt(conf.Name, strconv.Itoa(a.tree.Index()))
+	case "mongo", "mysql":
+		a.main.SetCliVisible(true, "CLI")
+		db := ""
+		if ds, ok := t.(*DSTree); ok {
+			db = ds.CmdDB() // restore the db of a cached tree (may be empty on first show)
+		}
+		a.main.GetCmd().SetPromt(conf.Name, db)
+	default:
+		a.main.SetCliVisible(false, "")
+	}
 	a.cfg.SaveLastSelected(index)
 	// Defer the focus to the tree: when Show runs from the connection dropdown's
 	// selected callback, tview restores focus to the dropdown AFTER the callback
@@ -437,7 +460,7 @@ func (a *App) onSearchChanged(term string) {
 
 // toggleFocus cycles keyboard focus through the visible panels in a fixed ring:
 // key tree → optional query box → table/text preview → bottom panel (CONSOLE /
-// redis-cli) → back to the tree. This lets the user reach table cells to edit
+// cli) → back to the tree. This lets the user reach table cells to edit
 // them, type a query, and read or copy from the console without the mouse. It
 // reports whether it acted; when focus is elsewhere (e.g. a form), it returns
 // false so Tab passes through.
@@ -461,7 +484,9 @@ func (a *App) toggleFocus() bool {
 	} else if preview.IsTextShown() {
 		ring = append(ring, preview.TextPrimitive())
 	}
-	ring = append(ring, a.main.BottomPanelPrimitive())
+	if bottom := a.main.BottomPanelPrimitive(); bottom != nil {
+		ring = append(ring, bottom) // nil when the bottom panel is collapsed
+	}
 
 	// Match by HasFocus() rather than comparing GetFocus() pointers: a mouse click
 	// focuses the embedded primitive (e.g. the inner *tview.TreeView), a different
@@ -576,6 +601,7 @@ func (a *App) invalidate(index int) {
 		t.Close()
 		delete(a.trees, key)
 	}
+	a.main.GetCmd().DropSession(key) // forget the edited connection's command session
 }
 
 // deleteConn removes the connection at index. Because the tree cache is keyed by
@@ -595,6 +621,7 @@ func (a *App) deleteConn(index int) {
 	a.trees = make(map[string]treeController)
 	a.connecting = make(map[string]bool)
 	a.tree = nil
+	a.main.GetCmd().DropAllSessions() // indices shift on delete; command sessions are keyed by index
 
 	a.cfg.Remove(index)
 	if err := a.cfg.Save(); err != nil {
@@ -681,14 +708,30 @@ func (a *App) newRedisTree(conf config.Conn) treeController {
 	return t
 }
 
-// newMongoTree builds the mongo-backed read-only tree (database > collection > docs).
+// newMongoTree builds the mongo-backed tree (database > collection > docs) and
+// wires the database-scoped command box: commands target a current database that
+// follows the tree selection and `use <db>`, mirrored into the prompt.
 func (a *App) newMongoTree(conf config.Conn) treeController {
-	return a.newDSTree(conf.Name, mongo.NewMongoSource(conf.MongoURI()))
+	t := NewDSTree(conf.Name, mongo.NewMongoSource(conf.MongoURI()))
+	t.preview.SetTableFocusFunc(a.focus)
+	t.preview.SetTextFocusFunc(a.focus)
+	t.preview.SetClipboardFunc(a.main.Clipboard)
+	t.preview.SetQueryFunc(t.runQuery)
+	t.ShowModal = a.main.ShowModal
+	t.ShowModalOK = a.main.ShowModalOK
+	t.SetCmdScoped(func(db string) { a.main.GetCmd().SetDB(db) })
+	return t
 }
 
-// newMySQLTree builds the mysql-backed tree (database > table > rows).
+// newMySQLTree builds the mysql-backed tree (database > table > rows) and wires
+// the database-scoped command box: SQL runs against a current database that
+// follows the tree selection and `use <db>`, mirrored into the prompt.
 func (a *App) newMySQLTree(conf config.Conn) treeController {
-	return a.newDSTree(conf.Name, mysql.NewMySQLSource(conf.Host, conf.Port, conf.User, conf.Auth))
+	t := a.newDSTree(conf.Name, mysql.NewMySQLSource(conf.Host, conf.Port, conf.User, conf.Auth))
+	if ds, ok := t.(*DSTree); ok {
+		ds.SetCmdScoped(func(db string) { a.main.GetCmd().SetDB(db) })
+	}
+	return t
 }
 
 // newZKTree builds the zookeeper-backed tree. Znode paths nest into a folder
@@ -725,16 +768,28 @@ func (a *App) onCmdLineEnter(text string) {
 	}
 	cmd := args[0]
 	view := a.main.GetCmd()
+
+	// `use <db>` is a client-side switch for mongo: it retargets the command box's
+	// database (and prompt) without dispatching to the datasource.
+	if ds, ok := a.tree.(*DSTree); ok && strings.EqualFold(cmd, "use") {
+		if len(args) < 2 {
+			fmt.Fprintln(view, "usage: use <db>")
+			return
+		}
+		if ds.UseDB(args[1]) {
+			fmt.Fprintf(view, "switched to db %v\n", args[1])
+			return
+		}
+	}
+
 	if err := a.tree.Cmd(view, cmd, args[1:]...); err != nil {
 		fmt.Fprintln(view, err)
-	} else {
-		switch strings.ToUpper(cmd) {
-		case "SELECT":
-			index, err := strconv.Atoi(args[1])
-			if err != nil {
-				fmt.Fprintln(view, err)
-			} else {
-				view.SetIndex(index)
+	} else if a.curKind == "" || a.curKind == "redis" {
+		// redis `SELECT n` switches the connection's db; mirror it into the prompt.
+		// Guarded to redis so a mysql `SELECT ... FROM` doesn't trip the Atoi check.
+		if strings.EqualFold(cmd, "SELECT") && len(args) > 1 {
+			if _, err := strconv.Atoi(args[1]); err == nil {
+				view.SetDB(args[1])
 			}
 		}
 	}

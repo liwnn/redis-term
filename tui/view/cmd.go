@@ -59,7 +59,29 @@ type CmdConsole struct {
 	onCmdLineEnter func(string)
 	title          string
 	address        string
-	index          int
+	db             string
+
+	// Per-connection sessions. The live fields above (lines/input/cursor/history/
+	// histPos/scroll/follow/address/db) are the ACTIVE working set; sessions holds
+	// the saved copy of every other connection's set, keyed by connection. Switch
+	// snapshots the active set back into the current key and loads the target's,
+	// so each connection keeps its own scrollback, input and history.
+	sessions map[string]*cmdSession
+	sessKey  string
+}
+
+// cmdSession is one connection's saved command-box state, swapped in and out of
+// CmdConsole's live fields by Switch.
+type cmdSession struct {
+	lines   []string
+	input   []rune
+	cursor  int
+	history []string
+	histPos int
+	scroll  int
+	follow  bool
+	address string
+	db      string
 }
 
 // cellRune is one visible screen cell read back during selection: its primary
@@ -72,9 +94,10 @@ type cellRune struct {
 
 func NewCmdConsole(title string) *CmdConsole {
 	c := &CmdConsole{
-		title:  title,
-		Box:    tview.NewBox(),
-		follow: true,
+		title:    title,
+		Box:      tview.NewBox(),
+		follow:   true,
+		sessions: make(map[string]*cmdSession),
 	}
 	c.Box.SetBorder(true)
 	c.Box.SetBackgroundColor(ThemePanelBG)
@@ -91,17 +114,91 @@ func (c *CmdConsole) SetClipboardFunc(f func(text string)) { c.onCopy = f }
 
 func (c *CmdConsole) SetEnterHandler(handler func(string)) { c.onCmdLineEnter = handler }
 
-// prompt renders the live prompt string, e.g. "127.0.0.1:6379:0> ".
+// prompt renders the live prompt string, e.g. "127.0.0.1:6379:0> " for redis
+// or "game-mongo:admin> " for mongo (db is a numeric db index for redis, a
+// database name for mongo).
 func (c *CmdConsole) prompt() string {
-	return fmt.Sprintf("%v:%v> ", c.address, c.index)
+	return fmt.Sprintf("%v:%v> ", c.address, c.db)
 }
 
-func (c *CmdConsole) SetPromt(address string, index int) {
+func (c *CmdConsole) SetPromt(address string, db string) {
 	c.address = address
-	c.index = index
+	c.db = db
 }
 
-func (c *CmdConsole) SetIndex(index int) { c.index = index }
+func (c *CmdConsole) SetDB(db string) { c.db = db }
+
+// Switch makes key the active session: it snapshots the live fields back into
+// the current session and loads key's saved state (a blank session the first
+// time key is seen), so each connection keeps its own scrollback, input,
+// history and prompt. No-op when key is already active.
+func (c *CmdConsole) Switch(key string) {
+	if key == c.sessKey {
+		return
+	}
+	if c.sessKey != "" {
+		c.sessions[c.sessKey] = c.snapshot()
+	}
+	c.sessKey = key
+	if s, ok := c.sessions[key]; ok {
+		c.restore(s)
+	} else {
+		c.restore(&cmdSession{follow: true})
+	}
+	// selection is view-local, never carried across a switch
+	c.selecting = false
+	c.hasSel = false
+}
+
+// DropSession forgets a saved session (used when a connection is edited or
+// deleted). If key is the active session, its live state is also reset so the
+// stale scrollback doesn't linger on screen.
+func (c *CmdConsole) DropSession(key string) {
+	delete(c.sessions, key)
+	if key == c.sessKey {
+		c.restore(&cmdSession{follow: true})
+		c.selecting = false
+		c.hasSel = false
+	}
+}
+
+// DropAllSessions forgets every saved session and clears the active one. Used
+// when the whole connection cache is rebuilt (e.g. a deletion shifts indices).
+func (c *CmdConsole) DropAllSessions() {
+	c.sessions = make(map[string]*cmdSession)
+	c.sessKey = ""
+	c.restore(&cmdSession{follow: true})
+	c.selecting = false
+	c.hasSel = false
+}
+
+// snapshot copies the live session fields out for storage.
+func (c *CmdConsole) snapshot() *cmdSession {
+	return &cmdSession{
+		lines:   c.lines,
+		input:   c.input,
+		cursor:  c.cursor,
+		history: c.history,
+		histPos: c.histPos,
+		scroll:  c.scroll,
+		follow:  c.follow,
+		address: c.address,
+		db:      c.db,
+	}
+}
+
+// restore loads a stored session into the live fields.
+func (c *CmdConsole) restore(s *cmdSession) {
+	c.lines = s.lines
+	c.input = s.input
+	c.cursor = s.cursor
+	c.history = s.history
+	c.histPos = s.histPos
+	c.scroll = s.scroll
+	c.follow = s.follow
+	c.address = s.address
+	c.db = s.db
+}
 
 // Write appends output to the scrollback. It splits on newlines and merges a
 // leading fragment into the last (incomplete) output line so callers can build a
@@ -130,8 +227,12 @@ func (c *CmdConsole) appendOutput(s string) {
 // pushHistoryLine commits the echoed "prompt + command" as its own scrollback
 // line (always a fresh line, regardless of any open output fragment).
 func (c *CmdConsole) pushHistoryLine(line string) {
-	// if the last line is a non-empty open fragment, start fresh
-	if len(c.lines) > 0 && c.lines[len(c.lines)-1] != "" {
+	// Reuse the trailing open line when it has no VISIBLE content. A previous
+	// command with no output leaves a color-tag-only line (e.g. "[white]"): it's a
+	// non-empty string but renders blank, so a plain != "" check would orphan it as
+	// a stray blank line above the new prompt. Measure display width to treat it as
+	// empty and overwrite it instead.
+	if len(c.lines) > 0 && tview.TaggedStringWidth(c.lines[len(c.lines)-1]) > 0 {
 		c.lines = append(c.lines, line)
 	} else if len(c.lines) > 0 {
 		c.lines[len(c.lines)-1] = line

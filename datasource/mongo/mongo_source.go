@@ -435,23 +435,58 @@ func (s *MongoSource) DropContainer(container string) error {
 	return s.client.Database(container).Drop(c)
 }
 
-// Command runs a read-only mongo-shell style query against the selected
-// database (container). Supported forms:
+// Command runs a mongo-shell style statement against the selected database
+// (container). Supported forms:
 //
 //	db.<coll>.find(<filter>, <projection>)
 //	db.<coll>.findOne(<filter>, <projection>)
-//	db.<coll>.countDocuments(<filter>)   (alias: count)
+//	db.<coll>.countDocuments(<filter>)               (alias: count)
+//	db.<coll>.insertOne(<doc>)
+//	db.<coll>.insertMany([<doc>, ...])
+//	db.<coll>.updateOne(<filter>, <update>)
+//	db.<coll>.updateMany(<filter>, <update>)
+//	db.<coll>.deleteOne(<filter>)
+//	db.<coll>.deleteMany(<filter>)
 //	db.runCommand(<command>)
 //
-// Writes (insert/update/delete) are intentionally not exposed here so the
-// command box can't accidentally mutate a production database.
+// All arguments are parsed as MongoDB Extended JSON, so typed values and
+// operators ($set, $oid, dates, ...) work as in the mongo shell.
 func (s *MongoSource) Command(container, raw string) (string, error) {
-	q := strings.TrimSpace(raw)
+	// Tolerate a trailing semicolon (mongo-shell habit): strip it so the
+	// `)`-suffix checks in parseShellCall/trimCall still match.
+	q := strings.TrimRight(strings.TrimSpace(raw), ";")
+	q = strings.TrimSpace(q)
+	c, cancel := ctx()
+	defer cancel()
+
+	// mongo-shell helpers (no `db.` prefix). `show dbs` needs no selected
+	// database, so handle these before the container guard below.
+	switch strings.ToLower(q) {
+	case "show dbs", "show databases":
+		names, err := s.client.ListDatabaseNames(c, bson.M{})
+		if err != nil {
+			return "", err
+		}
+		return strings.Join(names, "\n"), nil
+	case "show collections", "show tables":
+		if container == "" {
+			return "", fmt.Errorf("select a database first")
+		}
+		names, err := s.Entries(container)
+		if err != nil {
+			return "", err
+		}
+		return strings.Join(names, "\n"), nil
+	case "db":
+		if container == "" {
+			return "", fmt.Errorf("select a database first")
+		}
+		return container, nil
+	}
+
 	if container == "" {
 		return "", fmt.Errorf("select a database first")
 	}
-	c, cancel := ctx()
-	defer cancel()
 	db := s.client.Database(container)
 
 	if arg, ok := trimCall(q, "db.runCommand("); ok {
@@ -490,7 +525,7 @@ func (s *MongoSource) Command(container, raw string) (string, error) {
 		if err := cur.All(c, &docs); err != nil {
 			return "", err
 		}
-		return marshalExt(docs)
+		return marshalDocs(docs)
 	case "findOne":
 		filter, projection, err := parseFindArgs(args)
 		if err != nil {
@@ -518,9 +553,86 @@ func (s *MongoSource) Command(container, raw string) (string, error) {
 			return "", err
 		}
 		return strconv.FormatInt(n, 10), nil
+	case "insertOne":
+		var doc bson.D
+		if err := bson.UnmarshalExtJSON([]byte(args), false, &doc); err != nil {
+			return "", fmt.Errorf("invalid document: %v", err)
+		}
+		res, err := collection.InsertOne(c, doc)
+		if err != nil {
+			return "", err
+		}
+		return marshalExt(bson.M{"acknowledged": true, "insertedId": res.InsertedID})
+	case "insertMany":
+		var docs []interface{}
+		if err := bson.UnmarshalExtJSON([]byte(args), false, &docs); err != nil {
+			return "", fmt.Errorf("invalid documents: %v", err)
+		}
+		res, err := collection.InsertMany(c, docs)
+		if err != nil {
+			return "", err
+		}
+		return marshalExt(bson.M{"acknowledged": true, "insertedIds": res.InsertedIDs})
+	case "updateOne", "updateMany":
+		filter, update, err := parseUpdateArgs(args)
+		if err != nil {
+			return "", err
+		}
+		var res *mongo.UpdateResult
+		if method == "updateOne" {
+			res, err = collection.UpdateOne(c, filter, update)
+		} else {
+			res, err = collection.UpdateMany(c, filter, update)
+		}
+		if err != nil {
+			return "", err
+		}
+		return marshalExt(bson.M{
+			"acknowledged":  true,
+			"matchedCount":  res.MatchedCount,
+			"modifiedCount": res.ModifiedCount,
+			"upsertedCount": res.UpsertedCount,
+		})
+	case "deleteOne", "deleteMany":
+		filter, _, err := parseFindArgs(args)
+		if err != nil {
+			return "", err
+		}
+		var res *mongo.DeleteResult
+		if method == "deleteOne" {
+			res, err = collection.DeleteOne(c, filter)
+		} else {
+			res, err = collection.DeleteMany(c, filter)
+		}
+		if err != nil {
+			return "", err
+		}
+		return marshalExt(bson.M{"acknowledged": true, "deletedCount": res.DeletedCount})
 	default:
-		return "", fmt.Errorf("unsupported method %q (find/findOne/countDocuments/runCommand only)", method)
+		return "", fmt.Errorf("unsupported method %q", method)
 	}
+}
+
+// parseUpdateArgs parses the filter (arg 0) and update document (arg 1) of an
+// updateOne()/updateMany() call. Both are required.
+func parseUpdateArgs(args string) (filter, update bson.M, err error) {
+	parts := splitTopLevelCommas(args)
+	if len(parts) < 2 {
+		return nil, nil, fmt.Errorf("update requires a filter and an update document")
+	}
+	filter = bson.M{}
+	if f := strings.TrimSpace(parts[0]); f != "" {
+		if err := bson.UnmarshalExtJSON([]byte(f), false, &filter); err != nil {
+			return nil, nil, fmt.Errorf("invalid filter: %v", err)
+		}
+	}
+	update = bson.M{}
+	if u := strings.TrimSpace(parts[1]); u != "" {
+		if err := bson.UnmarshalExtJSON([]byte(u), false, &update); err != nil {
+			return nil, nil, fmt.Errorf("invalid update: %v", err)
+		}
+	}
+	return filter, update, nil
 }
 
 // trimCall returns the argument inside a `prefix...)` call when q matches that
@@ -609,6 +721,26 @@ func marshalExt(v interface{}) (string, error) {
 		return "", err
 	}
 	return string(b), nil
+}
+
+// marshalDocs renders a list of documents as a JSON array. bson's ExtJSON
+// marshaller only writes documents at the top level (not a bare array), so each
+// doc is marshalled on its own and joined into a bracketed, indented list.
+func marshalDocs(docs []bson.M) (string, error) {
+	if len(docs) == 0 {
+		return "[]", nil
+	}
+	parts := make([]string, 0, len(docs))
+	for _, d := range docs {
+		s, err := marshalExt(d)
+		if err != nil {
+			return "", err
+		}
+		// indent every line one level so the doc nests under the array bracket
+		s = "  " + strings.ReplaceAll(s, "\n", "\n  ")
+		parts = append(parts, s)
+	}
+	return "[\n" + strings.Join(parts, ",\n") + "\n]", nil
 }
 
 // columnUnion returns the field names across docs, with _id first and the

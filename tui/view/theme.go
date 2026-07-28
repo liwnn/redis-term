@@ -20,10 +20,10 @@ var (
 	// ThemeBorderDim is the border color of an UNFOCUSED panel: dim enough to
 	// recede quietly against the dark panel bg. The focused panel switches to
 	// ThemeBorderFocus (brighter) instead of tview's default doubled-line look.
-	ThemeBorderDim = tcell.GetColor("#4a5159")
+	ThemeBorderDim = tcell.GetColor("#3d424a")
 	// ThemeBorderFocus is the border color of the FOCUSED panel — a bright steel
 	// blue so the active panel reads clearly without drawing a second line.
-	ThemeBorderFocus = tcell.GetColor("#7aa6d6")
+	ThemeBorderFocus = tcell.GetColor("#5a80ab")
 	ThemeTitleFG     = tcell.GetColor("#c8ccd0")
 
 	// Type/Size are rendered as muted "chips": a single slightly-lifted dark fill
@@ -70,6 +70,11 @@ var (
 	// band while the selected cell still stands out on top.
 	ThemeRowHighlightBG = tcell.GetColor("#22303d")
 
+	// Bottom-panel tab header: a barely-lifted background one step above the panel
+	// so the header row reads as distinct from the content below it by tone alone —
+	// replacing the hand-drawn rule that used to separate them.
+	ThemeBottomHeaderBG = tcell.GetColor("#282a2f")
+
 	// Toolbar buttons (the +/e icons by the connection selector, and the dialog's
 	// secondary Test/Cancel actions): a lifted blue-gray fill with clear contrast
 	// against both the dark panel and the plain-text field labels, so a button
@@ -93,14 +98,15 @@ var (
 	ThemeBtnDangerHoverBG = tcell.GetColor("#8b3a3a")
 )
 
-// Bottom tab strip (CONSOLE / redis-cli): the active tab reads as a solid
+// Bottom tab strip (CONSOLE / cli): the active tab reads as a solid
 // selected chip in the same blue as ThemeSelectBG, inactive tabs as dim text.
 // These are tview color-tag strings (not tcell.Color) so they can be written
 // directly into the TextView markup, replacing tview's reverse-video highlight.
 const (
-	tabActiveBG   = "#2f5d8a" // matches ThemeSelectBG
+	tabActiveBG   = "#26466a" // a deep muted blue: clearly marks the active tab without pulling focus
 	tabActiveFG   = "white"
-	tabInactiveFG = "#7c8597"
+	tabInactiveBG = "#454b54" // a clearly lifted gray so an inactive tab reads as a solid clickable pill
+	tabInactiveFG = "#c3cad6"
 )
 
 // typeBadgeColors maps lowercase Redis / datasource type names to a background

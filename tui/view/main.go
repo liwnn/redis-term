@@ -8,6 +8,13 @@ import (
 	"github.com/rivo/tview"
 )
 
+// Bottom-panel tab identifiers, used as both the tview page ID and the tab
+// label. The cli tab is only shown for connections that support a command box.
+const (
+	tabOutput = "Output"
+	tabCli    = "CLI"
+)
+
 // MainView main
 type MainView struct {
 	*tview.Application
@@ -33,10 +40,19 @@ type MainView struct {
 	opBarHost *tview.Flex     // slot inside the op bar that holds the active preview's op row
 	opBarItem tview.Primitive // the op row currently mounted in opBarHost (for removal)
 
-	bottomTabs  *tview.TextView // the CONSOLE / redis-cli tab strip
+	bottomTabs  *tview.TextView // the Output / cli tab strip
 	bottomPages *tview.Pages    // the panel pages switched by the tab strip
-	activeTab   string          // currently selected bottom tab ("CONSOLE" / "redis-cli")
-	cliVisible  bool            // whether the redis-cli tab is shown (redis backends only)
+	activeTab   string          // currently selected bottom tab (tabOutput / tabCli)
+	cliVisible  bool            // whether the cli tab is shown (redis + mongo backends)
+	cliLabel    string          // display label of the cli tab
+
+	// Toggle-able bottom panel (VSCode's "Toggle Panel"): the button in the top op
+	// bar hides the whole bottom panel so the preview fills the full height, and
+	// restores it on the next click.
+	bottomLayout *tview.Flex   // the bordered frame wrapping the tab header + pages
+	bottomToggle *tview.Button // the show/hide button in the top op bar
+	rightPreview  *tview.Flex     // the active preview mounted above the bottom panel
+	bottomHidden  bool            // whether the whole bottom panel is currently hidden
 
 	screen tcell.Screen // live tcell screen, captured on first draw, for clipboard
 }
@@ -362,13 +378,34 @@ func (m *MainView) buildOpBar() tview.Primitive {
 	host := tview.NewFlex().SetDirection(tview.FlexColumn)
 	host.SetBackgroundColor(ThemePanelBG)
 
+	// VSCode's "Toggle Panel" button, pinned to the far top-right: one click hides
+	// the whole bottom panel (preview fills the height), the next restores it.
+	toggle := tview.NewButton(bottomShownGlyph)
+	// Styled as a clear control (button-blue fill, bright icon) so it reads as
+	// clickable in the op bar; terminals can't render a real raised/3D chip, so a
+	// distinct color is what carries the affordance. Hover brightens it.
+	toggle.SetStyle(tcell.StyleDefault.Background(ThemeBtnToolBG).Foreground(ThemeBtnToolFG))
+	toggle.SetActivatedStyle(tcell.StyleDefault.Background(ThemeBtnToolHoverBG).Foreground(tcell.ColorWhite))
+	toggle.SetSelectedFunc(m.ToggleBottomPanel)
+	m.bottomToggle = toggle
+
 	flex := tview.NewFlex().SetDirection(tview.FlexColumn)
 	flex.SetBackgroundColor(ThemePanelBG)
 	flex.AddItem(left, opBarLeftWidth, 0, false) // width is re-set each Draw
 	flex.AddItem(host, 0, 1, false)              // flexible: the preview op row
+	flex.AddItem(toggle, 3, 0, false)            // fixed: the Toggle Panel button
+	flex.AddItem(nil, 1, 0, false)               // trailing gap so it's not flush to the edge
 	m.opBarHost = host
 	return &opBar{Flex: flex, left: left, treeWidth: func() int { return m.leftWidth }}
 }
+
+// bottomShownGlyph / bottomHiddenGlyph label the Toggle Panel button, echoing
+// VSCode's panel icon: a square with its bottom half filled (the panel is
+// docked at the bottom) while visible, and a hollow square while hidden.
+const (
+	bottomShownGlyph  = "⬓"
+	bottomHiddenGlyph = "□"
+)
 
 // SetPreviewOpBar mounts a preview's op row into the top bar's host slot,
 // replacing whatever was there. Passing nil clears it.
@@ -397,9 +434,8 @@ func (m *MainView) GetSearch() *tview.InputField {
 }
 
 func (m *MainView) SetPreview(preview *tview.Flex) {
-	m.rightFlexBox.Clear()
-	m.rightFlexBox.AddItem(preview, 0, 3, false)
-	m.rightFlexBox.AddItem(m.bottomPanel, 0, 1, false)
+	m.rightPreview = preview
+	m.applyBottomWeight() // lays out the column, preserving the hidden state across switches
 }
 
 func (m *MainView) GetOutput() io.Writer {
@@ -411,10 +447,14 @@ func (m *MainView) GetCmd() *CmdConsole {
 }
 
 // BottomPanelPrimitive returns the focusable widget of the bottom panel's active
-// tab — the redis-cli command console when that tab is selected, otherwise the
+// tab — the cli command console when that tab is selected, otherwise the
 // CONSOLE log. Used so Tab can cycle focus into the bottom panel.
 func (m *MainView) BottomPanelPrimitive() tview.Primitive {
-	if m.activeTab == "redis-cli" && m.cliVisible {
+	// Hidden: the panel isn't on screen, so it's not a Tab focus target.
+	if m.bottomHidden {
+		return nil
+	}
+	if m.activeTab == tabCli && m.cliVisible {
 		return m.cmdConsole
 	}
 	return m.console
@@ -439,29 +479,36 @@ func (m *MainView) createBottom() tview.Primitive {
 			pages.SwitchToPage(added[0])
 			m.bottomTabs.Highlight()
 			m.renderBottomTabs(m.cliVisible)
-			// Selecting the redis-cli tab drops focus straight into the command
+			// Selecting the cli tab drops focus straight into the command
 			// console so the user can type a command without an extra Tab/click;
 			// the console owns char input, so focusing it == entering edit mode.
-			if added[0] == "redis-cli" && m.cmdConsole != nil {
+			if added[0] == tabCli && m.cmdConsole != nil {
 				m.SetFocus(m.cmdConsole)
 			}
 		})
-	info.SetBackgroundColor(ThemePanelBG)
+	// The tab header gets a barely-lifted background so it reads as distinct from
+	// the content area below by tone alone — no separator rule needed.
+	info.SetBackgroundColor(ThemeBottomHeaderBG)
 
 	{
-		title := "CONSOLE"
+		title := tabOutput
 		// A custom read-only console so the user can drag-select and copy log text.
 		// It follows the tail itself on each Write; redraws are driven by the app
 		// event loop / QueueUpdateDraw callers.
 		console := NewLogConsole(title)
 		console.SetClipboardFunc(m.Clipboard)
+		// The unified bottom frame (below) owns the border + focus cue, and the tab
+		// strip labels the panel, so the inner console drops its own border/title to
+		// read as one panel with the tabs (VSCode-style).
+		console.Box.SetBorder(false).SetTitle("")
 		m.console = console
 		pages.AddPage(title, console, true, true)
 	}
 
 	{
-		cmd := NewCmdConsole("redis-cli")
+		cmd := NewCmdConsole(tabCli)
 		cmd.SetClipboardFunc(m.Clipboard)
+		cmd.Box.SetBorder(false)
 		m.cmdConsole = cmd
 		pages.AddPage(cmd.Title(), cmd, true, false)
 	}
@@ -470,54 +517,106 @@ func (m *MainView) createBottom() tview.Primitive {
 	m.bottomPages = pages
 	m.renderBottomTabs(true) // default to redis (cli tab shown) until a connection is shown
 
+	// One frame wraps the tab strip + content so the tabs read as the panel's
+	// header rather than a floating bar above a separate box. The header/content
+	// split is conveyed by the header's lifted background (see info above), not a
+	// separator rule. The frame's border tracks focus of whichever console holds it.
 	layout := tview.NewFlex().
 		SetDirection(tview.FlexRow).
-		AddItem(pages, 0, 1, false).
-		AddItem(info, 1, 1, false)
+		AddItem(info, 1, 1, false).
+		AddItem(pages, 0, 1, false)
 	layout.SetBackgroundColor(ThemePanelBG)
+	layout.SetBorder(true)
+	focusBorder(layout)
+	m.bottomLayout = layout
 	return layout
 }
 
-// renderBottomTabs rebuilds the bottom tab strip. The redis-cli tab is only
-// shown for redis connections (it issues raw redis commands); for other backends
-// it's hidden and the panel falls back to CONSOLE. Call on every connection show.
+// ToggleBottomPanel shows or hides the whole bottom panel (VSCode's "Toggle
+// Panel"): when hidden, the panel is removed from the right column entirely and
+// the preview expands to full height; when shown, it's restored to its default
+// 1/4 proportion. Driven by the toggle button in the top op bar.
+func (m *MainView) ToggleBottomPanel() {
+	if m.bottomPanel == nil {
+		return
+	}
+	m.bottomHidden = !m.bottomHidden
+	if m.bottomHidden {
+		m.bottomToggle.SetLabel(bottomHiddenGlyph)
+	} else {
+		m.bottomToggle.SetLabel(bottomShownGlyph)
+	}
+	m.applyBottomWeight()
+}
+
+// applyBottomWeight rebuilds the right column so the preview takes the whole
+// height when the bottom panel is hidden, or shares it 3:1 when shown. Re-applied
+// after SetPreview, which rebuilds the column from scratch.
+func (m *MainView) applyBottomWeight() {
+	if m.rightPreview == nil {
+		return
+	}
+	m.rightFlexBox.Clear()
+	if m.bottomHidden {
+		m.rightFlexBox.AddItem(m.rightPreview, 0, 1, false)
+	} else {
+		m.rightFlexBox.AddItem(m.rightPreview, 0, 3, false)
+		m.rightFlexBox.AddItem(m.bottomPanel, 0, 1, false)
+	}
+}
+
+// renderBottomTabs rebuilds the bottom tab strip. The cli tab is shown for
+// backends with a command box (redis / mongo); for others it's hidden and the
+// panel falls back to CONSOLE. Call on every connection show.
 //
 // The active tab is drawn as a solid themed chip (blue fill, matching the rest
 // of the selection theme) rather than tview's default reverse-video highlight;
 // regions are still emitted so a click is detected, but the highlight is cleared
 // in SetHighlightedFunc.
-func (m *MainView) renderBottomTabs(isRedis bool) {
+func (m *MainView) renderBottomTabs(cliVisible bool) {
 	if m.bottomTabs == nil {
 		return
 	}
-	m.cliVisible = isRedis
-	if m.activeTab == "" {
-		m.activeTab = "CONSOLE"
+	m.cliVisible = cliVisible
+	if m.cliLabel == "" {
+		m.cliLabel = tabCli
 	}
-	// If the cli tab is hidden while it was active, fall back to CONSOLE.
-	if !isRedis && m.activeTab == "redis-cli" {
-		m.activeTab = "CONSOLE"
-		m.bottomPages.SwitchToPage("CONSOLE")
+	if m.activeTab == "" {
+		m.activeTab = tabOutput
+	}
+	// If the cli tab is hidden while it was active, fall back to Output.
+	if !cliVisible && m.activeTab == tabCli {
+		m.activeTab = tabOutput
+		m.bottomPages.SwitchToPage(tabOutput)
 	}
 
 	m.bottomTabs.Clear()
-	fmt.Fprint(m.bottomTabs, m.tabChip("CONSOLE"))
-	if isRedis {
-		fmt.Fprint(m.bottomTabs, " "+m.tabChip("redis-cli"))
+	fmt.Fprint(m.bottomTabs, m.tabChip(tabOutput, tabOutput))
+	if cliVisible {
+		// The cli tab's region id stays tabCli (the console's page key) so
+		// clicks route to the same console; only the displayed label varies.
+		fmt.Fprint(m.bottomTabs, " "+m.tabChip(tabCli, m.cliLabel))
 	}
 }
 
 // tabChip renders one tab as a tview color-tag string: the active tab gets a
 // solid blue fill with white text (a pill, padded by a space on each side); an
-// inactive tab is dim text on the panel background.
-func (m *MainView) tabChip(id string) string {
+// inactive tab is dim text on the panel background. id is the click-region /
+// page key; label is the visible text (they differ for the cli tab).
+func (m *MainView) tabChip(id, label string) string {
 	if id == m.activeTab {
-		return fmt.Sprintf(`["%s"][%s:%s] %s [-:-][""]`, id, tabActiveFG, tabActiveBG, id)
+		return fmt.Sprintf(`["%s"][%s:%s] %s [-:-][""]`, id, tabActiveFG, tabActiveBG, label)
 	}
-	return fmt.Sprintf(`["%s"][%s:-] %s [-:-][""]`, id, tabInactiveFG, id)
+	// Inactive tabs get a faint filled pill too (not just dim text) so the strip
+	// reads as a row of buttons rather than plain labels.
+	return fmt.Sprintf(`["%s"][%s:%s] %s [-:-][""]`, id, tabInactiveFG, tabInactiveBG, label)
 }
 
-// SetCliVisible shows or hides the redis-cli tab based on the active backend.
-func (m *MainView) SetCliVisible(isRedis bool) {
-	m.renderBottomTabs(isRedis)
+// SetCliVisible shows or hides the cli tab and sets its label based on the
+// active backend. An empty label hides the tab (backends without a command box).
+func (m *MainView) SetCliVisible(visible bool, label string) {
+	if label != "" {
+		m.cliLabel = label
+	}
+	m.renderBottomTabs(visible)
 }
