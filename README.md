@@ -24,7 +24,7 @@ redis, `"mongo"` for mongodb, `"mysql"` for mysql:
 ```json
 [
   {"name": "local", "host": "127.0.0.1", "port": 6379, "auth": ""},
-  {"name": "game-mongo", "kind": "mongo", "uri": "mongodb://user:pass@host:27017/admin"},
-  {"name": "game-mysql", "kind": "mysql", "host": "127.0.0.1", "port": 3306, "user": "root", "auth": "pass"}
+  {"name": "mongo", "kind": "mongo", "uri": "mongodb://user:pass@host:27017/admin"},
+  {"name": "mysql", "kind": "mysql", "host": "127.0.0.1", "port": 3306, "user": "root", "auth": "pass"}
 ]
 ```
